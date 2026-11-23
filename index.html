@@ -26,6 +26,7 @@
     </div>
     <div class="top-actions">
       <span id="offlineBadge" class="badge warn" hidden data-i18n="offline">Hors ligne</span>
+      <button id="syncOpenTop" class="btn icon" type="button" data-sync-open aria-label="Synchroniser" title="Synchroniser">⇅</button>
       <button id="installBtn" class="btn small primary" hidden data-i18n="install">Installer l'app</button>
       <select id="langSelect" aria-label="Langue">
         <option value="fr">FR</option><option value="en">EN</option><option value="ar">ع</option>
@@ -146,6 +147,10 @@
           <input type="file" id="importFile" accept="application/json,.json" hidden>
           <button class="btn" id="exportCsv" type="button" data-i18n="exportCsv">Exporter CSV</button>
         </div>
+        <div class="btn-row">
+          <button class="btn primary" id="syncOpen" type="button" data-sync-open>⇅ <span data-i18n="sync">Synchroniser</span></button>
+          <button class="btn" id="syncUndo" type="button" hidden data-i18n="syncUndo">Annuler la dernière synchro</button>
+        </div>
         <button class="btn danger block" id="resetAll" type="button" data-i18n="resetAll">Tout effacer</button>
         <p id="iosHint" class="muted small" hidden data-i18n="iosHint"></p>
       </div>
@@ -194,11 +199,93 @@
     </form>
   </dialog>
 
+
+  <dialog id="syncDialog">
+    <div class="sync-dlg">
+      <header class="dlg-head">
+        <h3 id="syncTitle" data-i18n="syncTitle">Synchroniser</h3>
+        <button class="btn icon" type="button" id="syncClose" aria-label="Fermer">✕</button>
+      </header>
+
+      <div data-sync-panel="choice">
+        <p class="muted small" data-i18n="syncHelp"></p>
+        <div class="sync-choice">
+          <button type="button" class="choice" id="syncPcToMobile">
+            <b data-i18n="syncPcToMobile">PC → Mobile</b>
+            <span data-i18n="syncPcToMobileHint"></span>
+          </button>
+          <button type="button" class="choice" id="syncMobileToPc">
+            <b data-i18n="syncMobileToPc">Mobile → PC</b>
+            <span data-i18n="syncMobileToPcHint"></span>
+          </button>
+        </div>
+      </div>
+
+      <div data-sync-panel="send" hidden>
+        <button type="button" class="btn ghost small" data-sync-back>← <span data-i18n="syncBack">Retour</span></button>
+        <div class="sync-qr">
+          <div id="syncQrWrap">
+            <div id="syncQr" class="qrbox" role="img" aria-label="QR"></div>
+            <p id="syncQrCount" class="sync-count"></p>
+            <div id="syncQrNav" class="sync-nav btn-row">
+              <button type="button" class="btn small" id="syncPrev" data-i18n="syncPrev">Précédent</button>
+              <button type="button" class="btn small" id="syncToggle" data-i18n="syncPause">Pause</button>
+              <button type="button" class="btn small" id="syncNext" data-i18n="syncNext">Suivant</button>
+            </div>
+            <p class="muted small center" data-i18n="syncQrHint"></p>
+          </div>
+          <p id="syncShareHint" class="muted small" hidden data-i18n="syncShareHint"></p>
+          <button type="button" class="btn primary block" id="syncShare" hidden data-i18n="syncShare">Partager le code</button>
+          <button type="button" class="btn block" id="syncCopy" data-i18n="syncCopy">Copier le code</button>
+          <textarea id="syncCode" rows="3" readonly hidden></textarea>
+        </div>
+        <button type="button" class="btn ghost small sync-flip" hidden></button>
+      </div>
+
+      <div data-sync-panel="recv" hidden>
+        <button type="button" class="btn ghost small" data-sync-back>← <span data-i18n="syncBack">Retour</span></button>
+        <div id="syncScanBlock">
+          <h4 class="sync-h" data-i18n="syncScan">Scanner le QR</h4>
+          <p class="muted small" data-i18n="syncScanHelp"></p>
+          <div class="sync-scan-view">
+            <video id="syncVideo" autoplay playsinline muted hidden></video>
+            <canvas id="syncCanvas" hidden></canvas>
+            <p id="syncNoCam" class="sync-nocam" hidden></p>
+          </div>
+          <p id="syncProgress" class="sync-progress"></p>
+          <div id="syncDots" class="sync-dots" hidden></div>
+        </div>
+        <h4 class="sync-h" data-i18n="syncPaste">Coller le code</h4>
+        <ol id="syncPasteSteps" class="sync-steps" hidden>
+          <li data-i18n="syncStepPhoneShare"></li>
+          <li data-i18n="syncStepPcPaste"></li>
+        </ol>
+        <p id="syncPasteHelp" class="muted small" data-i18n="syncPasteHelp"></p>
+        <textarea id="syncPaste" rows="4" spellcheck="false"></textarea>
+        <button type="button" class="btn primary block" id="syncPasteGo" data-i18n="syncPasteGo">Valider le code</button>
+        <button type="button" class="btn ghost small sync-flip" hidden></button>
+      </div>
+
+      <div data-sync-panel="preview" hidden>
+        <button type="button" class="btn ghost small" id="syncPreviewBack">← <span data-i18n="syncBack">Retour</span></button>
+        <h4 class="sync-h" data-i18n="syncPreviewTitle">Aperçu des données reçues</h4>
+        <div id="syncPreview" class="hr-preview"></div>
+        <p class="muted small" data-i18n="syncReplaceHint"></p>
+        <button type="button" class="btn primary block" id="syncReplace" data-i18n="syncReplace">Remplacer les données</button>
+        <p class="muted small" data-i18n="syncMergeHint"></p>
+        <button type="button" class="btn block" id="syncMerge" data-i18n="syncMerge">Fusionner</button>
+      </div>
+    </div>
+  </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <noscript><p class="card">Pointage nécessite JavaScript.</p></noscript>
 
   <script src="assets/js/core.js"></script>
   <script src="assets/js/i18n.js"></script>
+  <script src="assets/js/vendor/lz-string.min.js"></script>
+  <script src="assets/js/vendor/qrcode.min.js"></script>
+  <script src="assets/js/vendor/jsQR.min.js"></script>
+  <script src="assets/js/sync.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

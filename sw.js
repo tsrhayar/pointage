@@ -1,7 +1,7 @@
 /* Pointage service worker: precached app shell, works fully offline.
    Bump VERSION whenever you change index.html, CSS, JS or icons so installed apps pick up the update.
    (Your data is in localStorage, never in this cache, so bumping VERSION never deletes it.) */
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL_CACHE = `pointage-shell-${VERSION}`;
 
 // Relative to the SW location: works under http://localhost/pointage/ and https://<user>.github.io/pointage/.
@@ -12,6 +12,10 @@ const SHELL = [
   "assets/css/style.css",
   "assets/js/core.js",
   "assets/js/i18n.js",
+  "assets/js/sync.js",
+  "assets/js/vendor/lz-string.min.js",
+  "assets/js/vendor/qrcode.min.js",
+  "assets/js/vendor/jsQR.min.js",
   "assets/js/app.js",
   "assets/icons/favicon.svg",
   "assets/icons/favicon-32.png",

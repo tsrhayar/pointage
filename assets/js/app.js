@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "1.2.0";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -257,6 +257,7 @@
     $("#perDay").hidden = !s.perDayEnabled;
     $("#appVersion").textContent = "v" + APP_VERSION;
     $("#hrAnchorSettings").textContent = hrAnchorText() || t("hrAnchorNone");
+    $("#syncUndo").hidden = !window.PointageSync.hasUndo();
   }
   function saveSettings(e) {
     e.preventDefault();
@@ -445,6 +446,293 @@
     if (m !== lastMinute) { lastMinute = m; if (view !== "settings") render(); }
     else if (view === "today") tick();
   }, 1000);
+
+
+  /* ---------- device-to-device QR / code sync ---------- */
+  const Sync = window.PointageSync;
+  let sync = { panel: "choice", dir: null, role: null, chunks: [], envelope: "", idx: 0, timer: null, playing: false, stream: null, raf: 0, collector: null, incoming: null, lastText: "" };
+
+  function syncPanel(name) {
+    sync.panel = name;
+    $$("#syncDialog [data-sync-panel]").forEach((p) => (p.hidden = p.dataset.syncPanel !== name));
+  }
+  function stopSyncPlay() { if (sync.timer) { clearInterval(sync.timer); sync.timer = null; } sync.playing = false; const b = $("#syncToggle"); if (b) b.textContent = t("syncPlay"); }
+  function stopSyncCamera() {
+    if (sync.raf) { cancelAnimationFrame(sync.raf); sync.raf = 0; }
+    const video = $("#syncVideo");
+    if (sync.stream) { sync.stream.getTracks().forEach((tr) => tr.stop()); sync.stream = null; }
+    if (video) { video.srcObject = null; video.hidden = true; }
+  }
+  function stopSync() { stopSyncPlay(); stopSyncCamera(); sync.collector = null; sync.incoming = null; sync.lastText = ""; }
+
+  function renderQR(text, el) {
+    el.innerHTML = "";
+    if (typeof qrcode !== "function") { el.textContent = "QR?"; return; }
+    let qr = null;
+    for (let n = 2; n <= 40; n++) {
+      try { const q = qrcode(n, "M"); q.addData(text, "Byte"); q.make(); qr = q; break; } catch (e) { qr = null; }
+    }
+    if (!qr) { el.textContent = "!"; return; }
+    el.innerHTML = typeof qr.createSvgTag === "function" ? qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }) : qr.createImgTag(4, 2);
+    const svg = el.querySelector("svg");
+    if (svg) {
+      if (!svg.getAttribute("viewBox")) {
+        const w = svg.getAttribute("width") || "280", h = svg.getAttribute("height") || "280";
+        svg.setAttribute("viewBox", "0 0 " + parseInt(w, 10) + " " + parseInt(h, 10));
+      }
+      svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
+      svg.setAttribute("aria-hidden", "true");
+    }
+  }
+  function drawSyncQR() {
+    if (!sync.chunks.length) return;
+    const ch = sync.chunks[sync.idx];
+    $("#syncQrCount").textContent = t("syncQrCount", { i: String(sync.idx + 1), n: String(sync.chunks.length) });
+    renderQR(ch.text, $("#syncQr"));
+    const multi = sync.chunks.length > 1;
+    $("#syncQrNav").hidden = !multi;
+  }
+  function playSyncQR() {
+    stopSyncPlay();
+    if (sync.chunks.length < 2) return;
+    sync.playing = true;
+    $("#syncToggle").textContent = t("syncPause");
+    sync.timer = setInterval(() => {
+      sync.idx = (sync.idx + 1) % sync.chunks.length;
+      drawSyncQR();
+    }, 1100);
+  }
+  /* Phone-sized / touch device. Overridable via sync.role ("phone" | "pc"). */
+  function isPhoneDevice() {
+    if (sync.role === "phone") return true;
+    if (sync.role === "pc") return false;
+    const coarse = matchMedia("(pointer: coarse)").matches;
+    const narrow = matchMedia("(max-width: 700px)").matches;
+    const touch = (navigator.maxTouchPoints || 0) > 0 || "ontouchstart" in window;
+    const ua = /Android|webOS|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    return !!(ua || (coarse && touch) || (narrow && touch));
+  }
+  function updateFlipRole() {
+    const label = isPhoneDevice() ? t("syncIAmPc") : t("syncIAmPhone");
+    $$(".sync-flip").forEach((b) => { b.textContent = label; b.hidden = !sync.dir; });
+  }
+  function enterDirection() {
+    const phone = isPhoneDevice();
+    const sending = sync.dir === "pc-mobile" ? !phone : phone;
+    if (sending) startSend();
+    else startRecv();
+    updateFlipRole();
+  }
+  function pickDirection(dir) {
+    sync.dir = dir;
+    enterDirection();
+  }
+
+  function startSend() {
+    stopSyncPlay(); stopSyncCamera();
+    const enc = Sync.encode(data);
+    sync.chunks = enc.chunks;
+    sync.envelope = enc.envelope;
+    sync.idx = 0;
+    const area = $("#syncCode");
+    area.value = enc.envelope;
+    area.hidden = true;
+    const shareMode = sync.dir === "mobile-pc";   // phone → PC: share/copy, no QR (PC has no camera)
+    $("#syncQrWrap").hidden = shareMode;
+    $("#syncShareHint").hidden = !shareMode;
+    $("#syncShare").hidden = !shareMode;
+    $("#syncShare").classList.toggle("primary", shareMode);
+    $("#syncCopy").classList.toggle("primary", !shareMode);
+    syncPanel("send");
+    if (shareMode) stopSyncPlay();
+    else {
+      drawSyncQR();
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (enc.chunks.length > 1 && !reduce) playSyncQR();
+      else { const b = $("#syncToggle"); if (b) b.textContent = t("syncPlay"); }
+    }
+    updateFlipRole();
+  }
+
+  function ingestSync(text, fromPaste) {
+    if (!sync.collector) sync.collector = Sync.collector(C.validate);
+    const r = sync.collector.add(text);
+    if (!r.ok) {
+      if (r.error === "corrupt") toast(t("syncCorrupt"));
+      else if (fromPaste || r.error === "checksum" || r.error === "conflict") toast(t("syncInvalid"));
+      return r;
+    }
+    if (r.total) {
+      $("#syncProgress").textContent = t("syncProgress", { x: String(r.got), n: String(r.total) });
+      const dots = $("#syncDots");
+      dots.hidden = r.total <= 1;
+      if (r.total > 1) {
+        const have = new Set();
+        // rebuild from collector status only; paint got as leading dots is misleading for out-of-order,
+        // so just show count-filled dots.
+        dots.innerHTML = Array.from({ length: r.total }, (_, i) => `<i class="${i < r.got ? "on" : ""}"></i>`).join("");
+      }
+    }
+    if (r.complete) { stopSyncCamera(); showSyncPreview(r.result); }
+    return r;
+  }
+  function showSyncPreview(result) {
+    sync.incoming = result;
+    const s = Sync.summarize(result.data);
+    const box = $("#syncPreview");
+    box.innerHTML = "";
+    const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; box.appendChild(el); };
+    add("div", t("syncPreviewSessions", { n: String(s.sessions) }) + " · " + t("syncPreviewDays", { n: String(s.days) }), "nums");
+    if (s.from && s.to) add("div", s.from === s.to ? shortDate(s.from) : t("syncPreviewRange", { a: shortDate(s.from), b: shortDate(s.to) }));
+    else add("div", t("syncPreviewEmpty"), "muted");
+    if (s.hr) add("div", t("syncPreviewHr", { d: shortDate(s.hr.date), x: signed(s.hr.minutes) }));
+    else add("div", t("syncPreviewHrNone"), "muted");
+    syncPanel("preview");
+  }
+
+  async function startCamera() {
+    const video = $("#syncVideo"), no = $("#syncNoCam");
+    no.hidden = true; no.textContent = "";
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      no.hidden = false; no.textContent = t("syncCameraOff");
+      return;
+    }
+    try {
+      sync.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+      video.srcObject = sync.stream;
+      video.hidden = false;
+      await video.play();
+      loopScan();
+    } catch (e) {
+      no.hidden = false; no.textContent = t("syncNoCamera");
+    }
+  }
+  function loopScan() {
+    const video = $("#syncVideo"), canvas = $("#syncCanvas");
+    let detector = null;
+    if (typeof BarcodeDetector === "function") {
+      try { detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (e) { detector = null; }
+    }
+    const tick = async () => {
+      if (!sync.stream) return;
+      if (video.readyState >= 2) {
+        try {
+          let text = null;
+          if (detector) {
+            const codes = await detector.detect(video);
+            if (codes && codes[0] && codes[0].rawValue) text = codes[0].rawValue;
+          } else if (typeof jsQR === "function") {
+            const w = video.videoWidth, h = video.videoHeight;
+            if (w && h) {
+              const scale = Math.min(1, 640 / Math.max(w, h));
+              const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+              canvas.width = cw; canvas.height = ch;
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              ctx.drawImage(video, 0, 0, cw, ch);
+              const img = ctx.getImageData(0, 0, cw, ch);
+              const r = jsQR(img.data, cw, ch, { inversionAttempts: "attemptBoth" });
+              if (r && r.data) text = r.data;
+            }
+          }
+          if (text && text !== sync.lastText) { sync.lastText = text; ingestSync(text, false); }
+        } catch (e) { /* drop a bad frame */ }
+      }
+      sync.raf = requestAnimationFrame(tick);
+    };
+    sync.raf = requestAnimationFrame(tick);
+  }
+  async function startRecv() {
+    stopSyncPlay(); stopSyncCamera();
+    sync.collector = Sync.collector(C.validate);
+    sync.lastText = "";
+    const onPc = !isPhoneDevice();
+    const allowScan = !onPc && sync.dir === "pc-mobile";  // only the phone scans, and only in PC → Mobile
+    const pcPaste = onPc || sync.dir === "mobile-pc";
+    $("#syncPaste").value = "";
+    $("#syncPaste").placeholder = t(pcPaste ? "syncPastePlaceholderPc" : "syncPastePlaceholder");
+    $("#syncPasteHelp").hidden = pcPaste && onPc;
+    $("#syncPasteHelp").textContent = t(onPc ? "syncPasteHelpPc" : "syncPasteHelp");
+    $("#syncPasteSteps").hidden = !onPc;
+    $("#syncScanBlock").hidden = !allowScan;
+    $("#syncProgress").textContent = "";
+    $("#syncDots").hidden = true;
+    $("#syncDots").innerHTML = "";
+    $("#syncNoCam").hidden = true;
+    $("#syncPasteGo").classList.toggle("primary", !allowScan);
+    syncPanel("recv");
+    updateFlipRole();
+    if (allowScan) await startCamera();
+  }
+  function applyIncoming(mode) {
+    if (!sync.incoming) return;
+    const incoming = sync.incoming.data;
+    Sync.saveUndo(data);
+    data = mode === "merge" ? Sync.merge(data, incoming, C.validate) : incoming;
+    persist(); applyTheme(); applyStatic(); render();
+    $("#syncDialog").close();
+    toast(mode === "merge" ? t("syncAppliedMerge") : t("syncAppliedReplace"));
+  }
+  function openSync() {
+    stopSync();
+    sync.dir = null; sync.role = null;
+    $("#syncUndo").hidden = !Sync.hasUndo();
+    applyStatic();
+    syncPanel("choice");
+    if (!$("#syncDialog").open) $("#syncDialog").showModal();
+  }
+  function undoSync() {
+    const prev = Sync.loadUndo(C.validate);
+    if (!prev) return;
+    if (!confirm(t("syncUndoConfirm"))) return;
+    data = prev;
+    Sync.clearUndo();
+    persist(); applyTheme(); applyStatic(); render();
+    toast(t("syncUndone"));
+  }
+
+  async function copySyncCode() {
+    const text = sync.envelope || $("#syncCode").value;
+    $("#syncCode").hidden = false;
+    $("#syncCode").select();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+      else document.execCommand("copy");
+      toast(t("syncCopied"));
+    } catch (e) { $("#syncCode").hidden = false; }
+  }
+  async function shareSyncCode() {
+    const text = sync.envelope || $("#syncCode").value;
+    if (typeof navigator.share === "function") {
+      try { await navigator.share({ title: "Pointage", text: text }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    await copySyncCode();
+  }
+
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-sync-open]")) openSync(); });
+  $("#syncClose").addEventListener("click", () => $("#syncDialog").close());
+  $("#syncDialog").addEventListener("close", () => { stopSync(); sync.dir = null; sync.role = null; });
+  $$("[data-sync-back]").forEach((b) => b.addEventListener("click", () => { stopSync(); sync.dir = null; sync.role = null; syncPanel("choice"); }));
+  $("#syncPcToMobile").addEventListener("click", () => pickDirection("pc-mobile"));
+  $("#syncMobileToPc").addEventListener("click", () => pickDirection("mobile-pc"));
+  $$(".sync-flip").forEach((b) => b.addEventListener("click", () => {
+    sync.role = isPhoneDevice() ? "pc" : "phone";
+    enterDirection();
+  }));
+  $("#syncPrev").addEventListener("click", () => { if (!sync.chunks.length) return; stopSyncPlay(); sync.idx = (sync.idx + sync.chunks.length - 1) % sync.chunks.length; drawSyncQR(); });
+  $("#syncNext").addEventListener("click", () => { if (!sync.chunks.length) return; stopSyncPlay(); sync.idx = (sync.idx + 1) % sync.chunks.length; drawSyncQR(); });
+  $("#syncToggle").addEventListener("click", () => { if (sync.playing) stopSyncPlay(); else playSyncQR(); });
+  $("#syncCopy").addEventListener("click", () => copySyncCode());
+  $("#syncShare").addEventListener("click", () => shareSyncCode());
+  $("#syncPasteGo").addEventListener("click", () => {
+    const v = $("#syncPaste").value.trim();
+    if (!v) return toast(t("syncInvalid"));
+    ingestSync(v, true);
+  });
+  $("#syncPreviewBack").addEventListener("click", () => startRecv());
+  $("#syncReplace").addEventListener("click", () => applyIncoming("replace"));
+  $("#syncMerge").addEventListener("click", () => applyIncoming("merge"));
+  $("#syncUndo").addEventListener("click", undoSync);
 
   /* ---------- PWA: offline badge, install, service worker ---------- */
   const setOnline = () => ($("#offlineBadge").hidden = navigator.onLine);

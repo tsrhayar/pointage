@@ -12,7 +12,7 @@ PWA 100 % statique (HTML, CSS, JS) pour pointer son entrée/sortie, suivre ses h
 - **Tableau de bord** : travaillé aujourd'hui / objectif, reste, **sortie estimée** pour atteindre l'objectif, **sortie pour solde à 0** (rattrape aussi le cumul), semaine en cours, solde cumulé au jour d'hier + « en sortant maintenant ».
 - **Historique** par mois et par semaine : périodes, total, écart du jour, totaux semaine/mois. Toucher un jour pour l'éditer (ajouter/modifier/supprimer des périodes, oubli de pointage) ou le marquer **jour férié / congé / maladie / autre** (objectif 0, ou demi-journée).
 - **Réglages** : objectif par jour (8h par défaut), jours travaillés (lun–ven), objectif hebdo optionnel (réparti sur les jours travaillés), objectif différent par jour, date de début du solde, **solde de départ** (ex. `-1h16` pour reprendre le chiffre des RH), arrondi des périodes (1/5/10/15/30 mn, plus proche/inférieur/supérieur), langue (FR / EN / العربية), thème (auto/clair/sombre).
-- **Données** : sauvegarde/import JSON, export CSV (séparateur `;`, s'ouvre dans Excel).
+- **Données** : sauvegarde/import JSON, export CSV (séparateur `;`, s'ouvre dans Excel), **synchronisation QR** d'un appareil vers un autre (sans serveur).
 - **PWA** : installable (bouton « Installer »), fonctionne hors ligne.
 
 Formats de durée acceptés : `8`, `7h30`, `7:30`, `45mn`, `-1h16`. Un nombre seul ≤ 24 = heures (`40` pour l'hebdo = 40 h).
@@ -31,13 +31,15 @@ sw.js                    service worker (cache de l'app, hors ligne)
 assets/css/style.css
 assets/js/core.js        calculs purs (dates, objectifs, solde, formats, CSV)
 assets/js/i18n.js        textes FR / EN / AR
+assets/js/sync.js        compression, QR (découpage, somme de contrôle, fusion)
+assets/js/vendor/        lz-string, qrcode-generator, jsQR (hors ligne, pas de CDN)
 assets/js/app.js         interface + stockage local
 assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 ```
 
 ## Mise à jour / publication
 - Tous les chemins sont relatifs : le dossier peut être publié tel quel sur GitHub Pages (ex. `https://<user>.github.io/pointage/`), Netlify, Cloudflare Pages…
-- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v1"` → `"v2"`) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v3"` → `"v4"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
 
 ## Sauvegarde
 Les données sont liées au navigateur et à l'adresse (localhost ≠ github.io). Effacer les données du navigateur efface les pointages : exporter régulièrement une **Sauvegarde JSON** (Réglages → Données).
@@ -56,3 +58,17 @@ Quand le solde cumulé est négatif, une carte **Plan de récupération** répar
 - Option **Inclure aujourd'hui (si pas terminé)**. Répartition en minutes entières, le reste va aux premiers jours (76 mn sur 6 jours → 13,13,13,13,12,12).
 - Pour chaque jour : minutes en plus, objectif du jour et heure de sortie estimée (d'après ton heure d'arrivée et ta pause habituelles). La **sortie estimée** du tableau de bord inclut le plan du jour.
 - Le mode choisi est mémorisé.
+
+## Synchroniser deux appareils (v1.2)
+
+Les données restent liées au navigateur et à l'adresse (localhost ≠ github.io) : le téléphone et le PC ne se parlent pas tout seuls. Bouton **⇅ Synchroniser** (en-tête, et Réglages → Données). Sur les deux appareils, ouvre la même app (idéalement la même adresse, par ex. `https://tsrhayar.github.io/pointage/` une fois en ligne). **Seul le téléphone scanne** ; le PC n'utilise jamais de caméra.
+
+Choisis le **sens** :
+
+- **PC → Mobile** — le PC affiche un (ou plusieurs) QR ; tu le scanne avec le téléphone. S'il y a plusieurs QR, la séquence défile toute seule (l'ordre n'a pas d'importance).
+- **Mobile → PC** — le téléphone envoie le code avec **Partager le code** (API de partage du système : WhatsApp, Mail, Messages… ; sinon le code est copié). Sur le PC, colle le code (**Ctrl+V**) et valide. Le PC n'a pas besoin de webcam.
+
+Un aperçu s'affiche avant d'appliquer (nombre de jours/périodes, plage de dates, dernier message RH). **Remplacer les données** (recommandé, par défaut) écrase les données de l'appareil qui reçoit. **Fusionner** garde, pour chaque jour, la version la plus récente ; les réglages de l'appareil qui reçoit restent inchangés. Une sauvegarde automatique permet d'**Annuler la dernière synchro** une fois (Réglages → Données).
+
+La caméra du téléphone exige une page en **HTTPS** (GitHub Pages convient) ou en **localhost**. Aucun serveur n'est utilisé : le code ne quitte les appareils que via le QR, le partage ou le presse-papiers. Si l'écran affiché n'est pas le bon (PC/téléphone mal détecté), un lien **Je suis sur le PC** / **Je suis sur le téléphone** permet de basculer.
+
