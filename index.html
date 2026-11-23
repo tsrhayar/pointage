@@ -53,7 +53,7 @@
         <div class="stats-grid">
           <div><span class="label" data-i18n="target">Objectif</span><b id="tTarget">–</b></div>
           <div><span class="label" id="tRemainingLabel" data-i18n="remaining">Reste</span><b id="tRemaining">–</b></div>
-          <div><span class="label" data-i18n="leaveAt">Sortie estimée</span><b id="tLeave">–</b></div>
+          <div><span class="label" id="tLeaveLabel" data-i18n="leaveAt">Sortie estimée</span><b id="tLeave">–</b></div>
           <div><span class="label" data-i18n="leaveAtZero">Sortie pour solde à 0</span><b id="tLeaveZero">–</b></div>
         </div>
       </div>
@@ -62,6 +62,23 @@
         <div class="card-head"><h2 data-i18n="balance">Solde cumulé</h2><span id="balanceAt" class="muted small"></span></div>
         <p id="balanceMain" class="balance-main">–</p>
         <p id="balanceNow" class="muted small"></p>
+        <div class="hr-row"><span id="hrAnchorLine" class="muted small"></span>
+          <button class="btn small ghost" type="button" data-hr-open>📋 <span data-i18n="hrPaste">Coller message RH</span></button></div>
+      </div>
+
+      <div class="card plan-card" id="planCard" hidden>
+        <div class="card-head"><h2 data-i18n="planTitle">Plan de récupération</h2><span id="planTotal" class="muted small"></span></div>
+        <div class="row2">
+          <select id="planMode" aria-label="Plan">
+            <option value="month" data-i18n="planMonth"></option><option value="week" data-i18n="planWeek"></option>
+            <option value="custom" data-i18n="planCustom"></option><option value="off" data-i18n="planOff"></option>
+          </select>
+          <label class="switch"><input type="checkbox" id="planToday"><span class="small" data-i18n="planIncludeToday"></span></label>
+        </div>
+        <div id="planPickerWrap" hidden><p class="small muted" data-i18n="planPick"></p><div id="planPicker" class="plan-picker"></div></div>
+        <p id="planSummary" class="plan-summary"></p>
+        <ul id="planDays" class="plan-days"></ul>
+        <p id="planHint" class="muted small"></p>
       </div>
 
       <div class="card">
@@ -103,6 +120,8 @@
         <label><span data-i18n="sStartDate">Compter à partir du</span><input type="date" name="startDate"></label>
         <label><span data-i18n="sInitial">Solde de départ</span><input name="initialBalance" placeholder="0">
           <small class="muted" data-i18n="sInitialHelp"></small></label>
+        <div class="hr-box"><span id="hrAnchorSettings" class="small"></span>
+          <button class="btn small" type="button" data-hr-open>📋 <span data-i18n="hrPaste">Coller message RH</span></button></div>
         <div class="row2">
           <label><span data-i18n="sRounding">Arrondi</span>
             <select name="rounding"><option value="0">—</option><option value="1">1 mn</option><option value="5">5 mn</option><option value="10">10 mn</option><option value="15">15 mn</option><option value="30">30 mn</option></select></label>
@@ -157,6 +176,20 @@
       <footer class="dlg-foot">
         <button class="btn" value="cancel" data-i18n="cancel">Annuler</button>
         <button class="btn primary" id="daySave" value="default" data-i18n="save">Enregistrer</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="hrDialog">
+    <form method="dialog" id="hrForm">
+      <header class="dlg-head"><h3 data-i18n="hrTitle">Message RH</h3><button class="btn icon" value="cancel" aria-label="Fermer">✕</button></header>
+      <p class="muted small" data-i18n="hrHelp"></p>
+      <textarea id="hrText" rows="6" spellcheck="false"></textarea>
+      <button type="button" class="btn ghost small" id="hrClipboard" hidden>📋 <span data-i18n="hrFromClipboard">Coller depuis le presse-papiers</span></button>
+      <div id="hrPreview" class="hr-preview" hidden></div>
+      <footer class="dlg-foot">
+        <button class="btn" value="cancel" data-i18n="cancel">Annuler</button>
+        <button class="btn primary" id="hrApply" value="default" disabled data-i18n="hrApply">Appliquer</button>
       </footer>
     </form>
   </dialog>

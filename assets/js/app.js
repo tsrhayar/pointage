@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.1.0";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -85,10 +85,11 @@
     const status = $("#statusLine");
     status.className = "status" + (s.running ? " on" : "");
     status.textContent = s.running ? `${t("working")} ${C.hhmm(s.open.start)}` : s.sessions.length ? `${t("dayDone")} · ${C.hhmm(s.sessions[s.sessions.length - 1].end)}` : t("notWorking");
-    $("#tTarget").textContent = s.off && !s.target ? L_.offTypes[s.off.type] || t("dayOff") : dur(s.target);
-    if (s.worked >= s.target && s.target > 0) { $("#tRemainingLabel").textContent = t("extra"); $("#tRemaining").textContent = "+" + dur(s.worked - s.target); }
+    $("#tTarget").textContent = s.off && !s.target ? L_.offTypes[s.off.type] || t("dayOff") : dur(s.target) + (s.planExtra ? ` + ${dur(s.planExtra)}` : "");
+    if (s.worked >= s.goal && s.goal > 0) { $("#tRemainingLabel").textContent = t("extra"); $("#tRemaining").textContent = "+" + dur(s.worked - s.goal); }
     else { $("#tRemainingLabel").textContent = t("remaining"); $("#tRemaining").textContent = dur(s.remaining); }
-    $("#tLeave").textContent = s.leaveAt ? C.hhmm(s.leaveAt) : s.target > 0 && s.worked >= s.target ? "✔" : "–";
+    $("#tLeaveLabel").textContent = s.planExtra ? t("planLeaveLabel") : t("leaveAt");
+    $("#tLeave").textContent = s.leaveAt ? C.hhmm(s.leaveAt) : s.goal > 0 && s.worked >= s.goal ? "✔" : "–";
     $("#tLeaveZero").textContent = s.leaveAtZero ? (C.dateKey(s.leaveAtZero) === s.key ? C.hhmm(s.leaveAtZero) : "> 24:00") : s.toZero === 0 && (s.worked || s.balanceBefore >= 0) ? "✔" : "–";
     const pct = s.target ? Math.min(1, s.worked / s.target) : s.worked ? 1 : 0;
     const ring = $("#ringFg");
@@ -106,6 +107,9 @@
     $("#balanceNow").textContent = s.sessions.length || s.target === 0
       ? (s.running ? t("ifLeaveNow", { x: signed(s.balanceNow) }) : t("withToday", { x: signed(s.balanceNow) }))
       : "";
+
+    $("#hrAnchorLine").textContent = hrAnchorText();
+    renderPlan(s, now);
 
     // week
     const ws = C.weekStart(s.key);
@@ -252,6 +256,7 @@
     $("#perDay").innerHTML = order.map((d) => `<label>${L_.days[d]}<input name="pd${d}" value="${hm(s.perDay[d] || 0)}"></label>`).join("");
     $("#perDay").hidden = !s.perDayEnabled;
     $("#appVersion").textContent = "v" + APP_VERSION;
+    $("#hrAnchorSettings").textContent = hrAnchorText() || t("hrAnchorNone");
   }
   function saveSettings(e) {
     e.preventDefault();
@@ -274,6 +279,7 @@
     s.initialBalance = init;
     s.rounding = +f.rounding.value; s.roundMode = f.roundMode.value;
     s.lang = f.lang.value; s.theme = f.theme.value;
+    if (s.hrAnchor && !C.anchorValid(s)) s.hrAnchor = null;   // start date / balance edited by hand → anchor no longer applies
     data.settings = s; persist(); applyTheme(); applyStatic(); render(); toast(t("saved"));
   }
 
@@ -295,6 +301,99 @@
     };
     r.readAsText(file);
   }
+
+  /* ---------- recovery plan ---------- */
+  const recovery = () => Object.assign({ mode: "month", includeToday: true, days: [] }, data.settings.recovery || {});
+  function renderPlan(s, now) {
+    const card = $("#planCard");
+    if (s.balanceBefore >= 0) { card.hidden = true; return; }
+    card.hidden = false;
+    const rec = recovery(), L_ = L(), today = s.key;
+    $("#planMode").value = rec.mode;
+    $("#planToday").checked = !!rec.includeToday;
+    $("#planToday").closest("label").hidden = rec.mode === "off";
+    $("#planTotal").textContent = t("planTotal", { x: dur(-s.balanceBefore) });
+    // custom day picker: from this week's Monday, 5 weeks
+    const wrap = $("#planPickerWrap");
+    wrap.hidden = rec.mode !== "custom";
+    if (rec.mode === "custom") {
+      const from = C.weekStart(today), sel = new Set(rec.days || []), cells = [];
+      for (let i = 0; i < 35; i++) {
+        const k = C.addDays(from, i), off = data.daysOff[k];
+        const past = k < today || (k === today && (!rec.includeToday || C.todayFinished(data, now)));
+        const dis = past || (off && !off.half);
+        cells.push(`<label class="chip" title="${fmtDate(k)}"><input type="checkbox" data-plan-day="${k}" ${sel.has(k) && !dis ? "checked" : ""} ${dis ? "disabled" : ""}><span>${L_.days[C.weekday(k)]}<b>${C.parseKey(k).getDate()}</b></span></label>`);
+      }
+      $("#planPicker").innerHTML = cells.join("");
+    }
+    const p = s.plan, ul = $("#planDays");
+    if (rec.mode === "off" || !p) { $("#planSummary").textContent = ""; ul.innerHTML = ""; $("#planHint").textContent = ""; return; }
+    if (!p.days.length) { $("#planSummary").textContent = ""; ul.innerHTML = `<li><span class="meta">${t("planNoDays")}</span></li>`; $("#planHint").textContent = ""; return; }
+    $("#planSummary").textContent = p.perDay === p.perDayMin ? t("planPerDay", { x: dur(p.perDay), n: p.days.length })
+      : t("planPerDayRange", { a: dur(p.perDayMin), b: dur(p.perDay), n: p.days.length });
+    ul.innerHTML = p.days.map((d) => {
+      const leave = d.key === today && s.running && s.leaveAt ? s.leaveAt : d.leaveAt;
+      const label = d.key === today ? t("today") : fmtDate(d.key, { weekday: "short", day: "numeric", month: "short" });
+      return `<li class="${d.key === today ? "is-today" : ""}"><span>${label}</span><span class="x">+${dur(d.extra)}</span>
+        <span class="meta">${t("planTarget", { x: dur(d.target) })} · ${t("planLeave", { t: C.hhmm(leave) })}</span></li>`;
+    }).join("");
+    $("#planHint").textContent = t("planHint", { s: C.fmtClock(p.habits.start), b: dur(p.habits.brk) });
+  }
+  function setRecovery(patch) { data.settings.recovery = Object.assign(recovery(), patch); persist(); render(); }
+  $("#planMode").addEventListener("change", (e) => {
+    const patch = { mode: e.target.value };
+    if (e.target.value === "custom" && !(recovery().days || []).length) {
+      // pre-select the remaining working days of this week as a starting point
+      patch.days = C.recoveryDays(data, Date.now(), Object.assign(recovery(), { mode: "week" }));
+    }
+    setRecovery(patch);
+  });
+  $("#planToday").addEventListener("change", (e) => setRecovery({ includeToday: e.target.checked }));
+  $("#planPicker").addEventListener("change", (e) => {
+    const k = e.target.dataset.planDay; if (!k) return;
+    const today = C.dateKey(Date.now());
+    const days = new Set((recovery().days || []).filter((d) => d >= today));
+    e.target.checked ? days.add(k) : days.delete(k);
+    setRecovery({ days: [...days].sort() });
+  });
+
+  /* ---------- HR message (balance anchor) ---------- */
+  const shortDate = (k) => fmtDate(k, { day: "numeric", month: "short", ...(k.slice(0, 4) !== C.dateKey(Date.now()).slice(0, 4) ? { year: "numeric" } : {}) });
+  const lcFirst = (x) => (data.settings.lang === "ar" ? x : x.charAt(0).toLowerCase() + x.slice(1));
+  function hrAnchorText() {
+    const a = data.settings.hrAnchor;
+    return a && C.anchorValid(data.settings) ? t("hrAnchor", { d: shortDate(a.date), v: signed(a.minutes) }) : "";
+  }
+  let hrParsed = null;
+  function hrUpdatePreview() {
+    const txt = $("#hrText").value, box = $("#hrPreview");
+    hrParsed = txt.trim() ? C.parseHR(txt, Date.now()) : null;
+    $("#hrApply").disabled = !hrParsed;
+    if (!txt.trim()) { box.hidden = true; return; }
+    box.hidden = false;
+    box.classList.toggle("bad", !hrParsed);
+    if (!hrParsed) { box.textContent = t("hrNone"); return; }
+    const p = hrParsed;
+    box.innerHTML = "";
+    const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; box.appendChild(el); };
+    add("b", t("hrPreview", { d: shortDate(p.date), x: lcFirst(balanceText(p.minutes)) }));
+    add("span", t("hrEffect", { d: shortDate(p.date), v: signed(p.minutes), n: shortDate(C.addDays(p.date, 1)) }));
+    if (p.count > 1) add("span", t("hrFound", { n: p.count }), "muted small");
+  }
+  function openHR() {
+    $("#hrText").value = ""; $("#hrText").placeholder = t("hrPlaceholder");
+    $("#hrClipboard").hidden = !(navigator.clipboard && navigator.clipboard.readText);
+    hrUpdatePreview(); $("#hrDialog").showModal(); $("#hrText").focus();
+  }
+  function applyHR() {
+    if (!hrParsed) return;
+    data.settings = C.applyHRAnchor(data.settings, hrParsed, Date.now());
+    persist(); $("#hrDialog").close(); render(); toast(t("hrApplied"));
+  }
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-hr-open]")) openHR(); });
+  $("#hrText").addEventListener("input", hrUpdatePreview);
+  $("#hrClipboard").addEventListener("click", async () => { try { $("#hrText").value = await navigator.clipboard.readText(); hrUpdatePreview(); } catch (e) { $("#hrText").focus(); } });
+  $("#hrForm").addEventListener("submit", (e) => { if (e.submitter && e.submitter.value === "default") { e.preventDefault(); applyHR(); } });
 
   /* ---------- navigation & render ---------- */
   let view = "today";

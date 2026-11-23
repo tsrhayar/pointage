@@ -156,3 +156,27 @@ dialog form { padding: 16px; display: grid; gap: 12px; max-height: 85vh; overflo
 [dir="rtl"] .day-row .tot { text-align: start; }
 @media (min-width: 720px) { .ring-wrap { width: 240px; height: 240px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* HR message */
+.hr-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent); }
+.hr-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+textarea { font: inherit; font-size: .88rem; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; width: 100%; resize: vertical; min-height: 120px; }
+textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.hr-preview { border-radius: 12px; padding: 12px; background: var(--primary-soft); display: grid; gap: 4px; font-size: .88rem; }
+.hr-preview b { font-size: 1rem; }
+.hr-preview.bad { background: var(--warn-soft); color: var(--warn); }
+
+/* recovery plan */
+.plan-card { display: grid; gap: 10px; }
+.plan-card .card-head { margin-bottom: 0; }
+.plan-summary { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--primary); }
+.plan-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.plan-days li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 8px 12px; background: var(--bg); border-radius: 12px; font-size: .86rem; font-variant-numeric: tabular-nums; }
+.plan-days li.is-today { outline: 1.5px solid var(--primary); }
+.plan-days .x { color: var(--primary); font-weight: 700; text-align: end; }
+.plan-days .meta { grid-column: 1 / -1; color: var(--muted); font-size: .78rem; }
+.plan-picker { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.plan-picker .chip span { min-width: 0; width: 100%; padding: 6px 2px; font-size: .72rem; line-height: 1.15; border-radius: 10px; }
+.plan-picker .chip span b { display: block; font-size: .9rem; }
+.plan-picker .chip input:disabled + span { opacity: .35; cursor: not-allowed; text-decoration: line-through; }
+.plan-picker .pad { visibility: hidden; }

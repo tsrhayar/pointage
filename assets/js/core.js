@@ -33,8 +33,13 @@
     roundMode: "nearest",             // nearest | down | up (applied to each session's duration)
     lang: "fr",
     theme: "auto",
+    hrAnchor: null,                   // { date, minutes, text, appliedAt } from a pasted HR message
+    recovery: { mode: "month", includeToday: true, days: [] },   // plan to make up a negative balance: off | month | week | custom
   };
-  const withDefaults = (s) => Object.assign({}, DEFAULT_SETTINGS, s || {}, { perDay: Object.assign({}, DEFAULT_SETTINGS.perDay, (s && s.perDay) || {}) });
+  const withDefaults = (s) => Object.assign({}, DEFAULT_SETTINGS, s || {}, {
+    perDay: Object.assign({}, DEFAULT_SETTINGS.perDay, (s && s.perDay) || {}),
+    recovery: Object.assign({}, DEFAULT_SETTINGS.recovery, (s && s.recovery) || {}),
+  });
 
   /* Base target for a weekday, ignoring days off. */
   function baseTarget(k, s) {
@@ -109,19 +114,81 @@
   }
 
   /* Today summary: remaining minutes, estimated leave time to reach the day target and to bring the cumulative balance to 0. */
+  /* ---------- recovery plan ---------- */
+  /* Split `total` minutes over n days in whole minutes; the remainder goes one minute each to the first days. */
+  function splitMinutes(total, n) {
+    if (n <= 0 || total <= 0) return [];
+    const base = Math.floor(total / n), r = total - base * n;
+    return Array.from({ length: n }, (_, i) => base + (i < r ? 1 : 0));
+  }
+  const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor((b.length - 1) / 2)]; };
+  /* Usual first clock-in (minutes after midnight) and usual total break, from the last 20 worked days before `k`. */
+  function habits(data, k) {
+    const idx = indexByDay(data.sessions);
+    const keys = [...idx.keys()].filter((d) => d < k).sort().slice(-20);
+    const starts = [], breaks = [];
+    for (const d of keys) {
+      const l = idx.get(d); const st = new Date(l[0].start); starts.push(st.getHours() * 60 + st.getMinutes());
+      if (l.every((x) => x.end)) breaks.push(l.slice(1).reduce((t, x, i) => t + Math.max(0, Math.round((x.start - l[i].end) / MIN)), 0));
+    }
+    return { start: median(starts) ?? 9 * 60, brk: median(breaks) ?? 60 };
+  }
+  /* Is today finished? (sessions recorded, nothing running and the day target reached) */
+  function todayFinished(data, now) {
+    const k = dateKey(now), d = dayStats(k, data, now);
+    return d.sessions.length > 0 && !d.sessions.some((x) => x.end == null) && d.worked >= d.target;
+  }
+  /* Candidate days for a mode (keys ≥ first day). Days off and non-working days are excluded, except custom picks on a
+     non-working day (the user chose to come in); days off are always excluded. */
+  function recoveryDays(data, now, rec) {
+    const s = data.settings, today = dateKey(now);
+    const first = rec.includeToday && !todayFinished(data, now) ? today : addDays(today, 1);
+    const off = data.daysOff || {};
+    let list;
+    if (rec.mode === "week") { const end = addDays(weekStart(today), 6); list = [...eachDay(first, end)].filter((k) => !off[k] && baseTarget(k, s) > 0); }
+    else if (rec.mode === "month") { list = [...eachDay(first, monthEnd(today))].filter((k) => !off[k] && baseTarget(k, s) > 0); }
+    else if (rec.mode === "custom") { list = [...new Set(rec.days || [])].filter((k) => k >= first && !(off[k] && !off[k].half)).sort(); }
+    else list = [];
+    return list;
+  }
+  /* Plan to bring the cumulative balance (through yesterday) back to 0. null when nothing to recover or mode "off". */
+  function recoveryPlan(data, now) {
+    const s = data.settings, rec = Object.assign({}, DEFAULT_SETTINGS.recovery, s.recovery || {});
+    if (rec.mode === "off") return null;
+    const today = dateKey(now);
+    const deficit = -balance(data, addDays(today, -1), now).minutes;
+    if (deficit <= 0) return null;
+    const keys = recoveryDays(data, now, rec);
+    const parts = splitMinutes(deficit, keys.length);
+    const h = habits(data, today);
+    const days = keys.map((k, i) => {
+      const target = targetFor(k, s, data.daysOff) + parts[i];
+      const brk = target > 6 * 60 ? h.brk : 0;
+      return { key: k, extra: parts[i], target, leaveAt: atTime(k, "00:00") + (h.start + brk + target) * MIN };
+    });
+    return { mode: rec.mode, includeToday: rec.includeToday, deficit, days, perDay: parts.length ? Math.max(...parts) : 0,
+      perDayMin: parts.length ? Math.min(...parts) : 0, todayExtra: days[0] && days[0].key === today ? days[0].extra : 0, habits: h };
+  }
+
+  /* Today summary: remaining minutes, estimated leave time to reach the day target (plus today's recovery extra when a plan
+     is active) and to bring the cumulative balance to 0. */
   function todaySummary(data, now) {
     const k = dateKey(now);
     const d = dayStats(k, data, now);
     const open = openSession(data.sessions);
     const running = !!(open && dateKey(open.start) === k);
-    const remaining = Math.max(0, d.target - d.worked);
+    const plan = recoveryPlan(data, now);
+    const planExtra = plan ? plan.todayExtra : 0;
+    const goal = d.target + planExtra;                                      // today's goal including the plan
+    const remaining = Math.max(0, goal - d.worked);
     const before = balance(data, addDays(k, -1), now).minutes;          // through yesterday
     const toZero = Math.max(0, d.target - d.worked - before);             // to end the day with a cumulative 0
     const base = running ? now : null;
     return {
-      key: k, ...d, running, open, remaining,
+      key: k, ...d, running, open, remaining, plan, planExtra, goal,
       balanceBefore: before, balanceNow: before + d.diff,
       leaveAt: base != null && remaining > 0 ? base + remaining * MIN : null,
+      leaveAtTarget: base != null && d.target - d.worked > 0 ? base + (d.target - d.worked) * MIN : null,
       leaveAtZero: base != null && toZero > 0 ? base + toZero * MIN : null,
       toZero,
     };
@@ -152,6 +219,72 @@
     return null;
   }
 
+
+  /* ---------- HR message parser ----------
+     Finds every "au <jour> <mois> [année] au cumul … tu dois rattraper X" (deficit, negative) or
+     "… dépassement / en avance / en plus X" (positive) in pasted text, ignoring chat noise.
+     Returns { date, minutes, text, all } for the most recent date (same date twice → last one in the text), or null. */
+  const MONTHS = [["janv", 1], ["jan", 1], ["fevr", 2], ["fev", 2], ["feb", 2], ["mars", 3], ["mar", 3], ["avr", 4], ["apr", 4], ["mai", 5], ["may", 5],
+    ["juin", 6], ["jun", 6], ["juil", 7], ["jul", 7], ["aout", 8], ["aou", 8], ["aug", 8], ["sept", 9], ["sep", 9], ["oct", 10], ["nov", 11], ["dec", 12]];
+  const monthNum = (w) => { for (const [p, n] of MONTHS) if (w.startsWith(p)) return n; return 0; };
+  const norm = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\u00a0\u202f]/g, " ").toLowerCase();
+  const NEG = /rattrap|retard|deficit|manque|en moins|a recuperer|dois|debiteur|negati/;
+  const POS = /depassement|en avance|en plus|de plus|excedent|surplus|crediteur|positi|d'avance|supplementaire/;
+  const ZERO = /a jour|equilibre|aucun (?:retard|depassement)|solde (?:est )?(?:nul|a 0|de 0)/;
+  function parseAmount(seg) {
+    const re = /(?<![a-z0-9:])(\d{1,3})\s*h(?:eures?|rs?)?\s*(?:(\d{1,2})\s*(?:mn|min(?:utes?)?|m)?)?(?![a-z0-9])|(?<![a-z0-9:])(\d{1,4})\s*(?:mn|min(?:utes?)?)(?![a-z])/;
+    const m = seg.match(re);
+    if (!m) return null;
+    return { minutes: m[3] != null ? +m[3] : +m[1] * 60 + (+m[2] || 0), index: m.index };
+  }
+  function parseHR(text, now) {
+    const raw = String(text || ""), t = norm(raw);
+    now = now == null ? Date.now() : now;
+    const today = dateKey(now);
+    const re = /\bau\s+(\d{1,2})(?:er)?\s*(?:([a-z]+)\.?|\/\s*(\d{1,2}))(?:\s*\/?\s*(\d{4}))?[\s,.]*au\s+cumul/g;
+    const hits = []; let m;
+    while ((m = re.exec(t))) hits.push(m);
+    const found = [];
+    hits.forEach((h, i) => {
+      const day = +h[1], mon = h[2] ? monthNum(h[2]) : +h[3];
+      if (!mon || mon > 12 || day < 1 || day > 31) return;
+      let year = h[4] ? +h[4] : parseKey(today).getFullYear();
+      let key = `${year}-${pad(mon)}-${pad(day)}`;
+      if (!h[4] && key > today) { year -= 1; key = `${year}-${pad(mon)}-${pad(day)}`; }
+      if (dateKey(parseKey(key)) !== key) return;                       // invalid day (e.g. 31 Nov)
+      const end = i + 1 < hits.length ? hits[i + 1].index : t.length;
+      const seg = t.slice(h.index + h[0].length, Math.min(end, h.index + h[0].length + 240));
+      const amt = parseAmount(seg);
+      const before = amt ? seg.slice(0, amt.index) : seg;
+      let sign = 0;
+      if (NEG.test(before)) sign = -1; else if (POS.test(before)) sign = 1;
+      else if (amt && NEG.test(seg.slice(amt.index, amt.index + 60))) sign = -1;
+      else if (amt && POS.test(seg.slice(amt.index, amt.index + 60))) sign = 1;
+      let minutes;
+      if (amt && sign) minutes = sign * amt.minutes;
+      else if (ZERO.test(seg) || (amt && amt.minutes === 0)) minutes = 0;
+      else return;
+      found.push({ date: key, minutes, order: i, start: h.index, end: h.index + h[0].length + (amt ? amt.index + 20 : 60) });
+    });
+    if (!found.length) return null;
+    const best = found.reduce((a, b) => (b.date >= a.date ? b : a));
+    return { date: best.date, minutes: best.minutes, text: lineAround(raw, best, t), count: found.length, all: found.map(({ date, minutes }) => ({ date, minutes })) };
+  }
+  /* Anchor model: balance at the end of the HR date = HR figure; the app's own tracking continues the next day. History is kept. */
+  function applyHRAnchor(settings, hr, now) {
+    return Object.assign({}, settings, { startDate: addDays(hr.date, 1), initialBalance: hr.minutes,
+      hrAnchor: { date: hr.date, minutes: hr.minutes, text: hr.text || "", appliedAt: now == null ? Date.now() : now } });
+  }
+  /* True when startDate / initialBalance still match the stored anchor (otherwise the user changed them by hand). */
+  const anchorValid = (s) => !!(s.hrAnchor && s.startDate === addDays(s.hrAnchor.date, 1) && Number(s.initialBalance) === s.hrAnchor.minutes);
+  /* The raw line(s) containing the chosen message (best effort, used only for display/storage). */
+  function lineAround(raw, f, t) {
+    if (t.length !== raw.length) return raw.trim().slice(0, 400);
+    let a = raw.lastIndexOf("\n", f.start); a = a < 0 ? 0 : a + 1;
+    let b = raw.indexOf("\n", f.start); if (b < 0) b = raw.length;
+    return raw.slice(a, b).trim().slice(0, 400);
+  }
+
   /* ---------- import / CSV ---------- */
   function validate(obj) {
     if (!obj || typeof obj !== "object" || !Array.isArray(obj.sessions)) throw new Error("invalid");
@@ -180,5 +313,6 @@
 
   return { MIN, pad, dateKey, parseKey, addDays, weekday, weekStart, monthStart, monthEnd, daysBetween, eachDay, hhmm, atTime,
     DEFAULT_SETTINGS, withDefaults, baseTarget, targetFor, roundMinutes, sessionMinutes, sessionsOn, workedOn, openSession, staleOpen,
-    indexByDay, dayStats, rangeStats, balance, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV };
+    indexByDay, dayStats, rangeStats, balance, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV, parseHR, applyHRAnchor, anchorValid,
+    splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits };
 });

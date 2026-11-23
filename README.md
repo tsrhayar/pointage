@@ -41,3 +41,18 @@ assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 
 ## Sauvegarde
 Les données sont liées au navigateur et à l'adresse (localhost ≠ github.io). Effacer les données du navigateur efface les pointages : exporter régulièrement une **Sauvegarde JSON** (Réglages → Données).
+
+## Message RH → solde (v1.1)
+Bouton **📋 Coller message RH** (écran Aujourd'hui, carte « Solde cumulé », et Réglages). Colle un ou plusieurs messages, même avec le bruit du chat (nom, heures, liens, puces) :
+> au 19 Nov au cumul, tu dois rattraper 1 h 16 mn
+
+- Seul le message **le plus récent par date** est pris (même date deux fois → le dernier du texte). Année = année en cours, ou l'année précédente si la date serait dans le futur.
+- Formulations reconnues : *tu dois rattraper / retard / manque* (négatif), *dépassement / en avance / en plus / de plus* (positif), *à jour* (0). Durées : `1 h 16 mn`, `1h16`, `58 mn`, `2 h`, `45 minutes`. Mois : `Nov`, `nov.`, `novembre`, `Déc`…
+- Un aperçu s'affiche avant d'appliquer. Appliquer = **ancre** : solde au 19 nov = −1 h 16 mn, date de début = 20 nov, solde de départ = −1h16. L'historique est conservé. L'ancre (date, valeur, texte d'origine) est affichée sur le tableau de bord et dans les Réglages ; modifier à la main la date de début ou le solde de départ la retire.
+
+## Plan de récupération (v1.1)
+Quand le solde cumulé est négatif, une carte **Plan de récupération** répartit le retard :
+- **Jusqu'à la fin du mois** / **Jusqu'à la fin de la semaine** (jours travaillés restants, jours off exclus), ou **Jours choisis** (sélecteur sur 5 semaines, samedi possible), ou **Désactivé**.
+- Option **Inclure aujourd'hui (si pas terminé)**. Répartition en minutes entières, le reste va aux premiers jours (76 mn sur 6 jours → 13,13,13,13,12,12).
+- Pour chaque jour : minutes en plus, objectif du jour et heure de sortie estimée (d'après ton heure d'arrivée et ta pause habituelles). La **sortie estimée** du tableau de bord inclut le plan du jour.
+- Le mode choisi est mémorisé.
