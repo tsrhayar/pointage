@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "Pointage — Suivi des heures de travail",
+  "short_name": "Pointage",
+  "description": "Pointe ton entrée et ta sortie, suis tes heures par jour et par semaine et ton solde cumulé. Données uniquement sur l'appareil.",
+  "lang": "fr",
+  "dir": "auto",
+  "start_url": "./#today",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "theme_color": "#4f46e5",
+  "background_color": "#f4f5fb",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Historique", "url": "./#history", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Réglages", "url": "./#settings", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

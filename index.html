@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pointage — Suivi des heures de travail</title>
+  <meta name="description" content="Pointage : suivi des heures d'entrée et de sortie, objectif par jour et par semaine, solde cumulé. Données stockées uniquement sur l'appareil.">
+  <meta name="theme-color" content="#4f46e5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Pointage">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="assets/icons/favicon.svg" alt="" width="28" height="28">
+      <div><h1 data-i18n="appTitle">Pointage</h1><small data-i18n="tagline">Suivi des heures de travail</small></div>
+    </div>
+    <div class="top-actions">
+      <span id="offlineBadge" class="badge warn" hidden data-i18n="offline">Hors ligne</span>
+      <button id="installBtn" class="btn small primary" hidden data-i18n="install">Installer l'app</button>
+      <select id="langSelect" aria-label="Langue">
+        <option value="fr">FR</option><option value="en">EN</option><option value="ar">ع</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <!-- TODAY -->
+    <section id="view-today" class="view" aria-labelledby="tab-today">
+      <div id="staleBanner" class="banner" hidden></div>
+      <div class="card hero">
+        <div class="ring-wrap">
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring-bg" cx="60" cy="60" r="52"/>
+            <circle id="ringFg" class="ring-fg" cx="60" cy="60" r="52"/>
+          </svg>
+          <div class="ring-center">
+            <div id="timer" class="timer">00:00</div>
+            <div id="timerSub" class="muted small"></div>
+          </div>
+        </div>
+        <div id="statusLine" class="status"></div>
+        <button id="clockBtn" class="clock-btn in" type="button"><span id="clockIcon">▶</span> <span id="clockLabel">Entrée</span></button>
+        <div class="stats-grid">
+          <div><span class="label" data-i18n="target">Objectif</span><b id="tTarget">–</b></div>
+          <div><span class="label" id="tRemainingLabel" data-i18n="remaining">Reste</span><b id="tRemaining">–</b></div>
+          <div><span class="label" data-i18n="leaveAt">Sortie estimée</span><b id="tLeave">–</b></div>
+          <div><span class="label" data-i18n="leaveAtZero">Sortie pour solde à 0</span><b id="tLeaveZero">–</b></div>
+        </div>
+      </div>
+
+      <div class="card balance-card" id="balanceCard">
+        <div class="card-head"><h2 data-i18n="balance">Solde cumulé</h2><span id="balanceAt" class="muted small"></span></div>
+        <p id="balanceMain" class="balance-main">–</p>
+        <p id="balanceNow" class="muted small"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2 data-i18n="thisWeek">Cette semaine</h2><span id="weekNums" class="muted small"></span></div>
+        <div class="bar"><div id="weekBar"></div></div>
+        <div id="weekDays" class="week-days"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2 data-i18n="sessionsToday">Pointages du jour</h2>
+          <button class="btn small ghost" id="editTodayBtn" data-i18n="edit">Modifier</button></div>
+        <ul id="todaySessions" class="sessions"></ul>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="view-history" class="view" hidden aria-labelledby="tab-history">
+      <div class="month-nav card">
+        <button class="btn icon" id="prevMonth" aria-label="Mois précédent">‹</button>
+        <div class="month-title"><b id="monthTitle"></b><span id="monthTotals" class="muted small"></span></div>
+        <button class="btn icon" id="nextMonth" aria-label="Mois suivant">›</button>
+      </div>
+      <div id="historyList"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view" hidden aria-labelledby="tab-settings">
+      <form id="settingsForm" class="card form" autocomplete="off">
+        <h2 data-i18n="sGeneral">Horaires</h2>
+        <label><span data-i18n="sDailyTarget">Objectif par jour</span>
+          <input name="dailyTarget" inputmode="text" placeholder="8h"><small class="muted" data-i18n="fmtHelp"></small></label>
+        <fieldset><legend data-i18n="sWorkDays">Jours travaillés</legend><div id="workDays" class="chips"></div></fieldset>
+        <label><span data-i18n="sWeekly">Objectif hebdo</span><input name="weeklyTarget" placeholder="—">
+          <small class="muted" data-i18n="sWeeklyHelp"></small></label>
+        <label class="switch"><input type="checkbox" name="perDayEnabled"><span data-i18n="sPerDay">Objectif différent par jour</span></label>
+        <div id="perDay" class="per-day" hidden></div>
+
+        <h2 data-i18n="sBalance">Solde cumulé</h2>
+        <label><span data-i18n="sStartDate">Compter à partir du</span><input type="date" name="startDate"></label>
+        <label><span data-i18n="sInitial">Solde de départ</span><input name="initialBalance" placeholder="0">
+          <small class="muted" data-i18n="sInitialHelp"></small></label>
+        <div class="row2">
+          <label><span data-i18n="sRounding">Arrondi</span>
+            <select name="rounding"><option value="0">—</option><option value="1">1 mn</option><option value="5">5 mn</option><option value="10">10 mn</option><option value="15">15 mn</option><option value="30">30 mn</option></select></label>
+          <label><span data-i18n="sRoundMode">Mode</span>
+            <select name="roundMode"><option value="nearest" data-i18n="rNearest"></option><option value="down" data-i18n="rDown"></option><option value="up" data-i18n="rUp"></option></select></label>
+        </div>
+
+        <h2 data-i18n="sDisplay">Affichage</h2>
+        <div class="row2">
+          <label><span data-i18n="sLang">Langue</span><select name="lang"><option value="fr">Français</option><option value="en">English</option><option value="ar">العربية</option></select></label>
+          <label><span data-i18n="sTheme">Thème</span><select name="theme"><option value="auto" data-i18n="thAuto"></option><option value="light" data-i18n="thLight"></option><option value="dark" data-i18n="thDark"></option></select></label>
+        </div>
+        <button class="btn primary block" type="submit" data-i18n="save">Enregistrer</button>
+      </form>
+
+      <div class="card form">
+        <h2 data-i18n="sData">Données</h2>
+        <p class="muted small" data-i18n="dataLocal"></p>
+        <div class="btn-row">
+          <button class="btn" id="exportJson" type="button" data-i18n="exportJson">Sauvegarde JSON</button>
+          <label class="btn" for="importFile"><span data-i18n="importJson">Importer JSON</span></label>
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+          <button class="btn" id="exportCsv" type="button" data-i18n="exportCsv">Exporter CSV</button>
+        </div>
+        <button class="btn danger block" id="resetAll" type="button" data-i18n="resetAll">Tout effacer</button>
+        <p id="iosHint" class="muted small" hidden data-i18n="iosHint"></p>
+      </div>
+      <p class="muted small center">Pointage · <span id="appVersion"></span></p>
+    </section>
+  </main>
+
+  <nav class="tabbar" role="tablist">
+    <button role="tab" id="tab-today" data-view="today" aria-selected="true"><span class="ti">⏱</span><span data-i18n="tabToday">Aujourd'hui</span></button>
+    <button role="tab" id="tab-history" data-view="history" aria-selected="false"><span class="ti">🗓</span><span data-i18n="tabHistory">Historique</span></button>
+    <button role="tab" id="tab-settings" data-view="settings" aria-selected="false"><span class="ti">⚙</span><span data-i18n="tabSettings">Réglages</span></button>
+  </nav>
+
+  <dialog id="dayDialog">
+    <form method="dialog" id="dayForm">
+      <header class="dlg-head"><h3 id="dayTitle"></h3><button class="btn icon" value="cancel" aria-label="Fermer">✕</button></header>
+      <div id="daySummary" class="muted small"></div>
+      <ul id="dayRows" class="edit-rows"></ul>
+      <button type="button" class="btn ghost block" id="addRow">＋ <span data-i18n="addSession">Ajouter une période</span></button>
+      <fieldset class="off-box">
+        <legend data-i18n="dayOff">Jour non travaillé</legend>
+        <div class="row2">
+          <select id="offType"></select>
+          <label class="switch"><input type="checkbox" id="offHalf"><span data-i18n="halfDay">Demi-journée</span></label>
+        </div>
+      </fieldset>
+      <p id="dayError" class="error" hidden></p>
+      <footer class="dlg-foot">
+        <button class="btn" value="cancel" data-i18n="cancel">Annuler</button>
+        <button class="btn primary" id="daySave" value="default" data-i18n="save">Enregistrer</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="card">Pointage nécessite JavaScript.</p></noscript>
+
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/i18n.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
