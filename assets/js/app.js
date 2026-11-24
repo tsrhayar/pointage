@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.3.0";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -31,6 +31,17 @@
   const locale = () => ({ fr: "fr-FR", en: "en-GB", ar: "ar-MA" }[data.settings.lang] || "fr-FR");
   const fmtDate = (k, opts) => C.parseKey(k).toLocaleDateString(locale(), opts || { weekday: "long", day: "numeric", month: "long" });
   const balanceText = (m) => (m < 0 ? t("mustCatchUp", { x: dur(m) }) : m > 0 ? t("ahead", { x: dur(m) }) : t("upToDate"));
+  const offTypes = () => L().offTypes || I18N.fr.offTypes;
+  const holidayName = (id) => (L().holidayNames || I18N.fr.holidayNames || {})[id] || id;
+  const offLabel = (off) => {
+    if (!off) return "";
+    if (off.auto && off.id) return holidayName(off.id);
+    return offTypes()[off.type] || off.type;
+  };
+  const fillOffSelect = (el, includeEmpty) => {
+    el.innerHTML = (includeEmpty ? `<option value="">${t("none")}</option>` : "") +
+      Object.entries(offTypes()).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  };
 
   function applyStatic() {
     const lang = data.settings.lang;
@@ -39,7 +50,13 @@
     $$("[data-i18n]").forEach((el) => { const v = t(el.dataset.i18n); if (typeof v === "string") el.textContent = v; });
     $("#langSelect").value = lang;
     const off = $("#offType");
-    off.innerHTML = `<option value="">${t("none")}</option>` + Object.entries(L().offTypes).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+    const prevOff = off.value, prevRange = $("#offRangeType") && $("#offRangeType").value;
+    fillOffSelect(off, true);
+    if (prevOff) off.value = prevOff;
+    if ($("#offRangeType")) {
+      fillOffSelect($("#offRangeType"), false);
+      if (prevRange) $("#offRangeType").value = prevRange;
+    }
   }
   function applyTheme() {
     const th = data.settings.theme;
@@ -60,7 +77,7 @@
     if (open) { open.end = Math.max(now, open.start + 1000); toast(`${t("clockOut")} ${C.hhmm(now)} ✔`); }
     else { data.sessions.push({ id: uid(), start: now, end: null, note: "" }); toast(`${t("clockIn")} ${C.hhmm(now)} ✔`); }
     persist(); render();
-    if (navigator.vibrate) navigator.vibrate(30);
+    try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.isActive)) navigator.vibrate(30); } catch (e) {}
   }
 
   /* ---------- TODAY view ---------- */
@@ -154,11 +171,21 @@
   function renderHistory() {
     const now = Date.now(), today = C.dateKey(now), L_ = L();
     const from = histMonth, end = C.monthEnd(histMonth);
-    const offKeys = Object.keys(data.daysOff).filter((k) => k >= from && k <= end);
+    const autoKeys = (a, b) => {
+      const s = data.settings;
+      if (!s.holidays || s.holidays.enabled === false) return [];
+      const years = new Set([+a.slice(0, 4), +b.slice(0, 4)]);
+      const skipped = new Set(s.holidaySkipped || []);
+      const out = [];
+      for (const y of years) for (const h of C.frenchHolidays(y, s.holidays)) if (h.key >= a && h.key <= b && !skipped.has(h.key) && !data.daysOff[h.key]) out.push(h.key);
+      return out;
+    };
+    const offKeys = [...new Set([...Object.keys(data.daysOff).filter((k) => k >= from && k <= end), ...autoKeys(from, end)])];
     const lastData = [today, ...offKeys].filter((k) => k <= end).sort().pop();
     const to = lastData < from ? null : (lastData > end ? end : lastData);
     $("#monthTitle").textContent = C.parseKey(from).toLocaleDateString(locale(), { month: "long", year: "numeric" });
-    $("#nextMonth").disabled = C.monthStart(today) <= from && !Object.keys(data.daysOff).some((k) => k > end);
+    const later = C.addDays(end, 1);
+    $("#nextMonth").disabled = C.monthStart(today) <= from && !Object.keys(data.daysOff).some((k) => k > end) && autoKeys(later, C.addDays(later, 400)).length === 0;
     const idx = C.indexByDay(data.sessions);
     if (!to) { $("#monthTotals").textContent = ""; $("#historyList").innerHTML = `<div class="card muted center">${t("noSessions")}</div>`; return; }
     const m = C.rangeStats(from, to, data, now, idx);
@@ -178,7 +205,7 @@
       for (const d of [...days].reverse()) {
         const wd = C.weekday(d.key);
         const ss = d.sessions.map((x) => `${C.hhmm(x.start)}–${x.end ? C.hhmm(x.end) : "…"}`).join(" · ");
-        const offB = d.off ? `<span class="badge off">${L_.offTypes[d.off.type] || t("dayOff")}${d.off.half ? " ½" : ""}</span> ` : "";
+        const offB = d.off ? `<span class="badge ${d.off.type === "telework" ? "tele" : "off"}">${offLabel(d.off)}${d.off.half ? " ½" : ""}</span> ` : "";
         const staleB = d.sessions.some((x) => !x.end) && d.key !== today ? `<span class="badge warn">⚠</span> ` : "";
         const diffTxt = !counted(d) ? "" : (d.worked || d.target) ? `<small class="${d.diff >= 0 ? "pos" : "neg"}">${signed(d.diff)}</small>` : "";
         html.push(`<div class="day-row${wd === 0 || wd === 6 ? " weekend" : ""}${d.key === today ? " is-today" : ""}" data-day="${d.key}" role="button" tabindex="0">
@@ -209,6 +236,7 @@
     if (!d.sessions.length && !d.off) $("#dayRows").innerHTML = rowHtml();
     $("#offType").value = d.off ? d.off.type : "";
     $("#offHalf").checked = !!(d.off && d.off.half);
+    $("#offHalf").closest("label").hidden = ($("#offType").value === "telework");
     $("#dayError").hidden = true;
     $("#dayDialog").showModal();
   }
@@ -233,7 +261,8 @@
     if (next.filter((x) => x.end == null).length > 1) return showErr(t("invalidTime"));
     data.sessions = data.sessions.filter((x) => C.dateKey(x.start) !== k).concat(next);
     const type = $("#offType").value;
-    if (type) data.daysOff[k] = { type, half: $("#offHalf").checked }; else delete data.daysOff[k];
+    const r = C.setDayOff(data, k, type ? { type, half: type !== "telework" && $("#offHalf").checked } : null);
+    data.daysOff = r.daysOff; data.settings = r.settings;
     persist(); $("#dayDialog").close(); render(); toast(t("saved"));
     return true;
   }
@@ -258,6 +287,13 @@
     $("#appVersion").textContent = "v" + APP_VERSION;
     $("#hrAnchorSettings").textContent = hrAnchorText() || t("hrAnchorNone");
     $("#syncUndo").hidden = !window.PointageSync.hasUndo();
+    const hol = s.holidays || {};
+    $("#holEnabled").checked = hol.enabled !== false;
+    $("#holPentecost").checked = !!hol.pentecost;
+    $("#holAlsace").checked = !!hol.alsace;
+    $("#holPentecost").disabled = !$("#holEnabled").checked;
+    $("#holAlsace").disabled = !$("#holEnabled").checked;
+    renderCompareList($("#hrCompareList"), true);
   }
   function saveSettings(e) {
     e.preventDefault();
@@ -320,9 +356,9 @@
     if (rec.mode === "custom") {
       const from = C.weekStart(today), sel = new Set(rec.days || []), cells = [];
       for (let i = 0; i < 35; i++) {
-        const k = C.addDays(from, i), off = data.daysOff[k];
+        const k = C.addDays(from, i), off = C.resolveOff(k, data.settings, data.daysOff);
         const past = k < today || (k === today && (!rec.includeToday || C.todayFinished(data, now)));
-        const dis = past || (off && !off.half);
+        const dis = past || (C.isNonWorkingOff(off) && !off.half);
         cells.push(`<label class="chip" title="${fmtDate(k)}"><input type="checkbox" data-plan-day="${k}" ${sel.has(k) && !dis ? "checked" : ""} ${dis ? "disabled" : ""}><span>${L_.days[C.weekday(k)]}<b>${C.parseKey(k).getDate()}</b></span></label>`);
       }
       $("#planPicker").innerHTML = cells.join("");
@@ -370,16 +406,31 @@
     const txt = $("#hrText").value, box = $("#hrPreview");
     hrParsed = txt.trim() ? C.parseHR(txt, Date.now()) : null;
     $("#hrApply").disabled = !hrParsed;
-    if (!txt.trim()) { box.hidden = true; return; }
+    const cmpBox = $("#hrCompare");
+    const hideCmp = () => { cmpBox.hidden = true; $("#hrKeep").hidden = true; };
+    if (!txt.trim()) { box.hidden = true; hideCmp(); return; }
     box.hidden = false;
     box.classList.toggle("bad", !hrParsed);
-    if (!hrParsed) { box.textContent = t("hrNone"); return; }
+    if (!hrParsed) { box.textContent = t("hrNone"); hideCmp(); return; }
     const p = hrParsed;
     box.innerHTML = "";
     const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; box.appendChild(el); };
     add("b", t("hrPreview", { d: shortDate(p.date), x: lcFirst(balanceText(p.minutes)) }));
     add("span", t("hrEffect", { d: shortDate(p.date), v: signed(p.minutes), n: shortDate(C.addDays(p.date, 1)) }));
     if (p.count > 1) add("span", t("hrFound", { n: p.count }), "muted small");
+    const cmp = C.compareHR(data, p, Date.now());
+    if (!cmp) { hideCmp(); return; }
+    cmpBox.hidden = false;
+    cmpBox.className = "hr-compare " + (cmp.equal ? "ok" : "warn");
+    cmpBox.innerHTML = "";
+    const line = document.createElement("b");
+    line.textContent = t("hrCompare", { d: shortDate(cmp.date), a: signed(cmp.appMinutes), r: signed(cmp.rhMinutes), e: C.fmtDur(cmp.delta, data.settings.lang) });
+    cmpBox.appendChild(line);
+    const note = document.createElement("span");
+    note.textContent = cmp.equal ? t("hrCompareEqual") : t("hrCompareDiff");
+    cmpBox.appendChild(note);
+    $("#hrKeep").hidden = false;
+    renderCompareList($("#hrCompareHist"), false);
   }
   function openHR() {
     $("#hrText").value = ""; $("#hrText").placeholder = t("hrPlaceholder");
@@ -388,13 +439,31 @@
   }
   function applyHR() {
     if (!hrParsed) return;
+    const cmp = C.compareHR(data, hrParsed, Date.now());
     data.settings = C.applyHRAnchor(data.settings, hrParsed, Date.now());
+    if (cmp) data.settings = C.recordComparison(data.settings, Object.assign({}, cmp, { choice: "rh" }));
     persist(); $("#hrDialog").close(); render(); toast(t("hrApplied"));
+  }
+  function keepHR() {
+    if (!hrParsed) return;
+    const cmp = C.compareHR(data, hrParsed, Date.now());
+    if (cmp) { data.settings = C.recordComparison(data.settings, Object.assign({}, cmp, { choice: "app" })); persist(); }
+    $("#hrDialog").close(); render(); toast(t("hrKept"));
+  }
+  function renderCompareList(el, inSettings) {
+    if (!el) return;
+    const list = (data.settings.hrComparisons || []);
+    if (!list.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    const head = inSettings ? `<li class="meta">${t("hrCompareHistory")}</li>` : "";
+    el.innerHTML = head + list.map((c) => `<li>${t("hrCompare", { d: shortDate(c.date), a: signed(c.appMinutes), r: signed(c.rhMinutes), e: C.fmtDur(c.delta, data.settings.lang) })}</li>`).join("");
   }
   document.addEventListener("click", (e) => { if (e.target.closest("[data-hr-open]")) openHR(); });
   $("#hrText").addEventListener("input", hrUpdatePreview);
   $("#hrClipboard").addEventListener("click", async () => { try { $("#hrText").value = await navigator.clipboard.readText(); hrUpdatePreview(); } catch (e) { $("#hrText").focus(); } });
   $("#hrForm").addEventListener("submit", (e) => { if (e.submitter && e.submitter.value === "default") { e.preventDefault(); applyHR(); } });
+  $("#hrKeep").addEventListener("click", (e) => { e.preventDefault(); keepHR(); });
+  $("#offType").addEventListener("change", () => { $("#offHalf").closest("label").hidden = $("#offType").value === "telework"; });
 
   /* ---------- navigation & render ---------- */
   let view = "today";
@@ -734,6 +803,105 @@
   $("#syncMerge").addEventListener("click", () => applyIncoming("merge"));
   $("#syncUndo").addEventListener("click", undoSync);
 
+
+  /* ---------- special days (leave / holiday / sick / telework) & French holidays ---------- */
+  let offCalMonth = C.monthStart(C.dateKey(Date.now()));
+  function setHolidays(patch) {
+    data.settings.holidays = Object.assign({}, C.withDefaults(data.settings).holidays, patch);
+    persist(); render();
+    if ($("#offDialog").open) renderOffDialog();
+  }
+  ["holEnabled", "holPentecost", "holAlsace"].forEach((id) => {
+    $("#" + id).addEventListener("change", () => setHolidays({
+      enabled: $("#holEnabled").checked, pentecost: $("#holPentecost").checked, alsace: $("#holAlsace").checked,
+    }));
+  });
+  function renderOffDialog() {
+    applyStatic();
+    const s = data.settings, today = C.dateKey(Date.now());
+    if (!$("#offFrom").value) $("#offFrom").value = today;
+    if (!$("#offTo").value) $("#offTo").value = today;
+    $("#offRangeHalfWrap").hidden = $("#offFrom").value !== $("#offTo").value || $("#offRangeType").value === "telework";
+    $("#offCalTitle").textContent = C.parseKey(offCalMonth).toLocaleDateString(locale(), { month: "long", year: "numeric" });
+    const from = offCalMonth, end = C.monthEnd(from);
+    const wd0 = C.weekday(from);
+    const pad = (wd0 + 6) % 7; // Monday-first: days before the 1st
+    // L().days is Sun-first; show Mon–Sun
+    const heads = [1, 2, 3, 4, 5, 6, 0].map((i) => `<div class="hd">${L().days[i]}</div>`);
+    const body = [];
+    for (let i = 0; i < pad; i++) body.push(`<span></span>`);
+    for (let k = from; k <= end; k = C.addDays(k, 1)) {
+      const off = C.resolveOff(k, s, data.daysOff);
+      const cls = [off && off.type === "telework" ? "tw" : "", C.isNonWorkingOff(off) ? "hol" : "", k === today ? "on" : ""].filter(Boolean).join(" ");
+      body.push(`<button type="button" data-off-day="${k}" class="${cls}" title="${off ? offLabel(off) : ""}">${+k.slice(8)}</button>`);
+    }
+    $("#offCal").innerHTML = heads.join("") + body.join("");
+    const year = +from.slice(0, 4);
+    const hols = (s.holidays && s.holidays.enabled === false) ? [] : C.frenchHolidays(year, s.holidays);
+    const skipped = new Set(s.holidaySkipped || []);
+    $("#offHolidayList").innerHTML = hols.length ? hols.map((h) => {
+      const skip = skipped.has(h.key) && !data.daysOff[h.key];
+      return `<li><span><b>${holidayName(h.id)}</b> <span class="meta">${shortDate(h.key)}${skip ? " · " + t("holSkipped") : " · " + t("holAuto")}</span></span>
+        <button type="button" class="btn small" data-hol-toggle="${h.key}">${skip ? t("holRestore") : t("holWork")}</button></li>`;
+    }).join("") : `<li class="meta">${t("holTitle")}</li>`;
+    const userKeys = Object.keys(data.daysOff || {}).sort();
+    $("#offUserList").innerHTML = userKeys.length ? userKeys.map((k) => {
+      const off = data.daysOff[k];
+      return `<li><span><b>${offLabel(off)}</b> <span class="meta">${shortDate(k)}${off.half ? " · " + t("halfDay") : ""}</span></span>
+        <button type="button" class="btn small danger" data-off-del="${k}">${t("delete")}</button></li>`;
+    }).join("") : `<li class="meta">${t("specialNone")}</li>`;
+  }
+  function openOffDialog() {
+    offCalMonth = C.monthStart(C.dateKey(Date.now()));
+    renderOffDialog();
+    if (!$("#offDialog").open) $("#offDialog").showModal();
+  }
+  function addOffRange() {
+    const from = $("#offFrom").value, to = $("#offTo").value, type = $("#offRangeType").value;
+    if (!from || !to || !type || from > to) return toast(t("specialRangeErr"));
+    const r = C.applySpecialRange(data, from, to, { type, half: type !== "telework" && $("#offRangeHalf").checked });
+    data.daysOff = r.daysOff; data.settings = r.settings;
+    persist(); render(); renderOffDialog(); toast(t("specialAdded"));
+  }
+  document.addEventListener("click", (e) => { if (e.target.closest("[data-off-open]")) openOffDialog(); });
+  $("#offClose").addEventListener("click", () => $("#offDialog").close());
+  $("#offRangeAdd").addEventListener("click", addOffRange);
+  $("#offFrom").addEventListener("change", () => { if (!$("#offTo").value || $("#offTo").value < $("#offFrom").value) $("#offTo").value = $("#offFrom").value; renderOffDialog(); });
+  $("#offTo").addEventListener("change", renderOffDialog);
+  $("#offRangeType").addEventListener("change", renderOffDialog);
+  $("#offCalPrev").addEventListener("click", () => { offCalMonth = C.monthStart(C.addDays(offCalMonth, -1)); renderOffDialog(); });
+  $("#offCalNext").addEventListener("click", () => { offCalMonth = C.addDays(C.monthEnd(offCalMonth), 1); renderOffDialog(); });
+  $("#offCal").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-off-day]"); if (!b) return;
+    const k = b.dataset.offDay;
+    if (!$("#offFrom").value || ($("#offFrom").value && $("#offTo").value && $("#offFrom").value !== $("#offTo").value)) {
+      $("#offFrom").value = k; $("#offTo").value = k;
+    } else if (k < $("#offFrom").value) { $("#offTo").value = $("#offFrom").value; $("#offFrom").value = k; }
+    else $("#offTo").value = k;
+    renderOffDialog();
+  });
+  $("#offHolidayList").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-hol-toggle]"); if (!b) return;
+    const k = b.dataset.holToggle;
+    const skipped = new Set(data.settings.holidaySkipped || []);
+    if (skipped.has(k)) {
+      skipped.delete(k);
+      const daysOff = Object.assign({}, data.daysOff); delete daysOff[k];
+      data.daysOff = daysOff;
+      data.settings = Object.assign({}, data.settings, { holidaySkipped: [...skipped].sort() });
+    } else {
+      const r = C.setDayOff(data, k, null);
+      data.daysOff = r.daysOff; data.settings = r.settings;
+    }
+    persist(); render(); renderOffDialog();
+  });
+  $("#offUserList").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-off-del]"); if (!b) return;
+    const r = C.setDayOff(data, b.dataset.offDel, null);
+    data.daysOff = r.daysOff; data.settings = r.settings;
+    persist(); render(); renderOffDialog();
+  });
+
   /* ---------- PWA: offline badge, install, service worker ---------- */
   const setOnline = () => ($("#offlineBadge").hidden = navigator.onLine);
   window.addEventListener("online", setOnline); window.addEventListener("offline", setOnline);
@@ -757,9 +925,17 @@
 
   /* ---------- boot ---------- */
   applyTheme(); applyStatic(); setOnline();
+  const shortcut = C.shortcutAction(location.search);
+  if (shortcut) history.replaceState(null, "", location.pathname + (location.hash || ""));
   const initial = (location.hash || "").slice(1);
   show(["today", "history", "settings"].includes(initial) ? initial : "today");
   if (!localStorage.getItem(KEY)) persist();
+  if (shortcut === "punch") clockToggle();
+  if (shortcut === "balance") {
+    const s = C.todaySummary(data, Date.now());
+    toast(t("shortcutBalance", { x: balanceText(s.balanceBefore) }));
+    const card = $("#balanceCard"); if (card) card.scrollIntoView({ block: "center" });
+  }
 
   // Small hook for debugging / automated tests.
   window.Pointage = { get data() { return data; }, reload() { data = load(); render(); }, version: APP_VERSION };

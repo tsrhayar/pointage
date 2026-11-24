@@ -102,6 +102,9 @@
         <div class="month-title"><b id="monthTitle"></b><span id="monthTotals" class="muted small"></span></div>
         <button class="btn icon" id="nextMonth" aria-label="Mois suivant">›</button>
       </div>
+      <div class="btn-row">
+        <button class="btn" type="button" data-off-open>🏖 <span data-i18n="specialOpen">Jours spéciaux</span></button>
+      </div>
       <div id="historyList"></div>
     </section>
 
@@ -137,6 +140,16 @@
         </div>
         <button class="btn primary block" type="submit" data-i18n="save">Enregistrer</button>
       </form>
+
+      <div class="card form" id="holidaysCard">
+        <h2 data-i18n="holTitle">Jours fériés (France)</h2>
+        <p class="muted small" data-i18n="holHelp"></p>
+        <label class="switch"><input type="checkbox" id="holEnabled"><span data-i18n="holEnable"></span></label>
+        <label class="switch"><input type="checkbox" id="holPentecost"><span data-i18n="holPentecost"></span></label>
+        <label class="switch"><input type="checkbox" id="holAlsace"><span data-i18n="holAlsace"></span></label>
+        <button class="btn" type="button" data-off-open>🏖 <span data-i18n="specialOpen">Jours spéciaux</span></button>
+        <div id="hrCompareList" class="hr-compare-list" hidden></div>
+      </div>
 
       <div class="card form">
         <h2 data-i18n="sData">Données</h2>
@@ -192,8 +205,11 @@
       <textarea id="hrText" rows="6" spellcheck="false"></textarea>
       <button type="button" class="btn ghost small" id="hrClipboard" hidden>📋 <span data-i18n="hrFromClipboard">Coller depuis le presse-papiers</span></button>
       <div id="hrPreview" class="hr-preview" hidden></div>
+      <div id="hrCompare" class="hr-compare" hidden></div>
+      <ul id="hrCompareHist" class="hr-compare-hist" hidden></ul>
       <footer class="dlg-foot">
         <button class="btn" value="cancel" data-i18n="cancel">Annuler</button>
+        <button class="btn" type="button" id="hrKeep" hidden data-i18n="hrKeep">Garder mon calcul</button>
         <button class="btn primary" id="hrApply" value="default" disabled data-i18n="hrApply">Appliquer</button>
       </footer>
     </form>
@@ -277,6 +293,39 @@
       </div>
     </div>
   </dialog>
+
+  <dialog id="offDialog">
+    <div class="sync-dlg">
+      <header class="dlg-head">
+        <h3 data-i18n="specialTitle">Jours spéciaux</h3>
+        <button class="btn icon" type="button" id="offClose" aria-label="Fermer">✕</button>
+      </header>
+      <p class="muted small" data-i18n="specialHelp"></p>
+      <div class="form">
+        <div class="row2">
+          <label><span data-i18n="specialFrom">Du</span><input type="date" id="offFrom"></label>
+          <label><span data-i18n="specialTo">Au</span><input type="date" id="offTo"></label>
+        </div>
+        <div class="row2">
+          <label><span data-i18n="specialType">Type</span><select id="offRangeType"></select></label>
+          <label class="switch" id="offRangeHalfWrap"><input type="checkbox" id="offRangeHalf"><span data-i18n="halfDay">Demi-journée de congé</span></label>
+        </div>
+        <button type="button" class="btn primary block" id="offRangeAdd" data-i18n="specialAdd">Ajouter</button>
+      </div>
+      <p id="offCalLabel" class="sync-h" data-i18n="specialCal"></p>
+      <div class="off-cal-nav">
+        <button type="button" class="btn icon" id="offCalPrev">‹</button>
+        <b id="offCalTitle"></b>
+        <button type="button" class="btn icon" id="offCalNext">›</button>
+      </div>
+      <div id="offCal" class="off-cal"></div>
+      <h4 class="sync-h" data-i18n="holTitle">Jours fériés (France)</h4>
+      <ul id="offHolidayList" class="off-list"></ul>
+      <h4 class="sync-h" data-i18n="specialList">Jours ajoutés</h4>
+      <ul id="offUserList" class="off-list"></ul>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <noscript><p class="card">Pointage nécessite JavaScript.</p></noscript>
 

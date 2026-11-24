@@ -219,3 +219,29 @@ textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 #syncQrWrap { display: grid; justify-items: center; gap: 10px; width: 100%; }
 #syncQrWrap[hidden] { display: none !important; }
 #syncScanBlock[hidden] { display: none !important; }
+
+/* special days + holidays */
+.off-cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.off-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.off-cal .hd { text-align: center; font-size: .7rem; color: var(--muted); font-weight: 600; text-transform: uppercase; }
+.off-cal button { font: inherit; font-size: .78rem; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  border-radius: 10px; min-height: 40px; padding: 4px 0; cursor: pointer; }
+.off-cal button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.off-cal button.hol { outline: 2px solid var(--warn); outline-offset: -2px; }
+.off-cal button.tw { outline: 2px solid var(--primary); outline-offset: -2px; }
+.off-cal button.muted { opacity: .4; }
+.off-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.off-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 10px; background: var(--bg); border-radius: 12px; font-size: .86rem; }
+.off-list .meta { color: var(--muted); font-size: .78rem; }
+.badge.tele { background: var(--primary-soft); color: var(--primary); }
+.hr-compare { border-radius: 12px; padding: 12px; display: grid; gap: 4px; font-size: .88rem; }
+.hr-compare.ok { background: var(--ok-soft); color: var(--ok); }
+.hr-compare.warn { background: var(--warn-soft); color: var(--warn); }
+.hr-compare-hist, .hr-compare-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.hr-compare-hist li, .hr-compare-list li { font-size: .8rem; color: var(--muted); }
+#holidaysCard .switch { margin: 2px 0; }
+
+#offDialog { width: min(560px, calc(100vw - 16px)); }
+#offDialog .sync-dlg { padding: 16px; display: grid; gap: 12px; max-height: 88vh; overflow: auto; }
+#holidaysCard { display: grid; gap: 10px; }

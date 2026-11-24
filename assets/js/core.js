@@ -35,10 +35,16 @@
     theme: "auto",
     hrAnchor: null,                   // { date, minutes, text, appliedAt } from a pasted HR message
     recovery: { mode: "month", includeToday: true, days: [] },   // plan to make up a negative balance: off | month | week | custom
+    holidays: { enabled: true, pentecost: false, alsace: false }, // official French public holidays (not Morocco)
+    holidaySkipped: [],               // auto-holiday keys the user chose to work
+    hrComparisons: [],                // last HR vs app balance comparisons
   };
   const withDefaults = (s) => Object.assign({}, DEFAULT_SETTINGS, s || {}, {
     perDay: Object.assign({}, DEFAULT_SETTINGS.perDay, (s && s.perDay) || {}),
     recovery: Object.assign({}, DEFAULT_SETTINGS.recovery, (s && s.recovery) || {}),
+    holidays: Object.assign({}, DEFAULT_SETTINGS.holidays, (s && s.holidays) || {}),
+    holidaySkipped: Array.isArray(s && s.holidaySkipped) ? s.holidaySkipped.slice() : [],
+    hrComparisons: Array.isArray(s && s.hrComparisons) ? s.hrComparisons.slice() : [],
   });
 
   /* Base target for a weekday, ignoring days off. */
@@ -49,11 +55,90 @@
     if (s.weeklyTarget != null && s.weeklyTarget !== "" && s.workDays.length) return Math.round(Number(s.weeklyTarget) / s.workDays.length);
     return Number(s.dailyTarget) || 0;
   }
-  /* Target for a date, honouring days off (full = 0, half = half the target). */
+  /* ---------- French public holidays (computed offline, Gregorian computus) ---------- */
+  function easterSunday(year) {
+    year = +year;
+    const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4;
+    const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+    const mod = (n, m) => ((n % m) + m) % m;
+    const h = mod(19 * a + b - d - g + 15, 30), i = Math.floor(c / 4), k = c % 4;
+    const l = mod(32 + 2 * e + 2 * i - h - k, 7), m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return dateKey(new Date(year, month - 1, day));
+  }
+  /* Official public holidays in metropolitan France. Pentecost Monday is optional (often a "journée de solidarité").
+     Alsace-Moselle adds Good Friday and 26 December. */
+  function frenchHolidays(year, opts) {
+    opts = opts || {};
+    const e = easterSunday(year);
+    const list = [
+      { key: year + "-01-01", id: "newYear" },
+      { key: addDays(e, 1), id: "easterMonday" },
+      { key: year + "-05-01", id: "labourDay" },
+      { key: year + "-05-08", id: "victory" },
+      { key: addDays(e, 39), id: "ascension" },
+      { key: year + "-07-14", id: "nationalDay" },
+      { key: year + "-08-15", id: "assumption" },
+      { key: year + "-11-01", id: "allSaints" },
+      { key: year + "-11-11", id: "armistice" },
+      { key: year + "-12-25", id: "christmas" },
+    ];
+    if (opts.pentecost) list.push({ key: addDays(e, 50), id: "pentecostMonday" });
+    if (opts.alsace) {
+      list.push({ key: addDays(e, -2), id: "goodFriday" });
+      list.push({ key: year + "-12-26", id: "stStephen" });
+    }
+    return list.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  }
+  /* Auto holiday on this date, ignoring skipped/overrides (null if auto holidays are off). */
+  function holidayOn(k, s) {
+    const h = (s && s.holidays) || DEFAULT_SETTINGS.holidays;
+    if (!k || h.enabled === false) return null;
+    return frenchHolidays(+k.slice(0, 4), h).find((x) => x.key === k) || null;
+  }
+  /* Resolved special day for a date: user daysOff wins; otherwise an auto holiday unless skipped.
+     Telework is a label only (still a working day). */
+  function resolveOff(k, s, daysOff) {
+    const manual = daysOff && daysOff[k];
+    if (manual && manual.type) return manual;
+    const hol = holidayOn(k, s);
+    if (hol && !((s && s.holidaySkipped) || []).includes(k)) return { type: "holiday", auto: true, id: hol.id };
+    return null;
+  }
+  const isNonWorkingOff = (off) => !!(off && off.type && off.type !== "telework");
+  /* Set or clear a special day. Clearing an auto holiday records it in holidaySkipped so it does not come back. */
+  function setDayOff(data, k, spec) {
+    const s = withDefaults(data && data.settings);
+    const daysOff = Object.assign({}, (data && data.daysOff) || {});
+    const skipped = new Set(s.holidaySkipped || []);
+    if (!spec || !spec.type) {
+      delete daysOff[k];
+      if (holidayOn(k, s)) skipped.add(k); else skipped.delete(k);
+    } else {
+      const row = { type: String(spec.type), half: !!spec.half };
+      daysOff[k] = row;
+      skipped.delete(k);
+    }
+    return { daysOff, settings: Object.assign({}, s, { holidaySkipped: [...skipped].sort() }) };
+  }
+  function applySpecialRange(data, from, to, spec) {
+    if (to < from) { const x = from; from = to; to = x; }
+    let daysOff = Object.assign({}, (data && data.daysOff) || {});
+    let settings = withDefaults(data && data.settings);
+    const half = !!(spec && spec.half && from === to);
+    const payload = spec && spec.type ? { type: spec.type, half } : null;
+    for (const k of eachDay(from, to)) {
+      const r = setDayOff({ daysOff, settings }, k, payload);
+      daysOff = r.daysOff; settings = r.settings;
+    }
+    return { daysOff, settings };
+  }
+  /* Target for a date, honouring days off / auto holidays (full = 0, half = half the target). Telework keeps the target. */
   function targetFor(k, s, daysOff) {
     const t = baseTarget(k, s);
-    const off = daysOff && daysOff[k];
-    if (!off) return t;
+    const off = resolveOff(k, s, daysOff);
+    if (!isNonWorkingOff(off)) return t;
     return off.half ? Math.round(t / 2) : 0;
   }
 
@@ -93,7 +178,7 @@
     const worked = list.reduce((t, x) => t + sessionMinutes(x, now, s), 0);
     const target = targetFor(k, s, data.daysOff);
     const breaks = list.slice(1).reduce((t, x, i) => t + (list[i].end ? Math.max(0, Math.round((x.start - list[i].end) / MIN)) : 0), 0);
-    return { key: k, sessions: list, worked, target, diff: worked - target, breaks, off: (data.daysOff || {})[k] || null };
+    return { key: k, sessions: list, worked, target, diff: worked - target, breaks, off: resolveOff(k, s, data.daysOff) };
   }
   function rangeStats(from, to, data, now, idx) {
     idx = idx || indexByDay(data.sessions);
@@ -143,11 +228,11 @@
   function recoveryDays(data, now, rec) {
     const s = data.settings, today = dateKey(now);
     const first = rec.includeToday && !todayFinished(data, now) ? today : addDays(today, 1);
-    const off = data.daysOff || {};
+    const blocked = (k) => isNonWorkingOff(resolveOff(k, s, data.daysOff));
     let list;
-    if (rec.mode === "week") { const end = addDays(weekStart(today), 6); list = [...eachDay(first, end)].filter((k) => !off[k] && baseTarget(k, s) > 0); }
-    else if (rec.mode === "month") { list = [...eachDay(first, monthEnd(today))].filter((k) => !off[k] && baseTarget(k, s) > 0); }
-    else if (rec.mode === "custom") { list = [...new Set(rec.days || [])].filter((k) => k >= first && !(off[k] && !off[k].half)).sort(); }
+    if (rec.mode === "week") { const end = addDays(weekStart(today), 6); list = [...eachDay(first, end)].filter((k) => !blocked(k) && baseTarget(k, s) > 0); }
+    else if (rec.mode === "month") { list = [...eachDay(first, monthEnd(today))].filter((k) => !blocked(k) && baseTarget(k, s) > 0); }
+    else if (rec.mode === "custom") { list = [...new Set(rec.days || [])].filter((k) => k >= first && !(blocked(k) && !((data.daysOff || {})[k] || {}).half)).sort(); }
     else list = [];
     return list;
   }
@@ -311,8 +396,43 @@
     return "\ufeff" + rows.join("\r\n");
   }
 
+  /* App balance at an HR date, before applying a new anchor. Uses a previous valid anchor when it is older than this message;
+     otherwise counts from startDate, or from the first session if startDate is after the HR date. */
+  function compareHR(data, hr, now) {
+    if (!hr || !hr.date) return null;
+    now = now == null ? Date.now() : now;
+    const s = withDefaults(data && data.settings);
+    let calc = s;
+    const prev = anchorValid(s) ? s.hrAnchor : null;
+    if (prev && prev.date < hr.date) calc = s;
+    else if (s.startDate && s.startDate <= hr.date) calc = s;
+    else {
+      const first = (data.sessions || []).reduce((m, x) => Math.min(m, x.start), Infinity);
+      calc = Object.assign({}, s, { startDate: isFinite(first) ? dateKey(first) : hr.date, initialBalance: 0, hrAnchor: null });
+    }
+    const appMinutes = balance({ settings: calc, sessions: (data && data.sessions) || [], daysOff: (data && data.daysOff) || {} }, hr.date, now).minutes;
+    const rhMinutes = hr.minutes;
+    const delta = appMinutes - rhMinutes;
+    return { date: hr.date, appMinutes, rhMinutes, delta, equal: Math.abs(delta) <= 1, usedPreviousAnchor: !!(prev && prev.date < hr.date) };
+  }
+  function recordComparison(settings, entry, limit) {
+    const row = Object.assign({ at: Date.now() }, entry);
+    const list = [row].concat((settings && settings.hrComparisons) || []).slice(0, limit || 8);
+    return Object.assign({}, withDefaults(settings), { hrComparisons: list });
+  }
+  /* PWA shortcut action from a query string ("?action=punch"). */
+  function shortcutAction(search) {
+    const q = String(search || "").replace(/^[?#]/, "");
+    const a = new URLSearchParams(q.indexOf("action=") >= 0 || q.indexOf("=") >= 0 ? q : "").get("action")
+      || (String(search || "").match(/[?&]action=([a-z]+)/) || [])[1];
+    return (a === "punch" || a === "balance") ? a : null;
+  }
+
   return { MIN, pad, dateKey, parseKey, addDays, weekday, weekStart, monthStart, monthEnd, daysBetween, eachDay, hhmm, atTime,
-    DEFAULT_SETTINGS, withDefaults, baseTarget, targetFor, roundMinutes, sessionMinutes, sessionsOn, workedOn, openSession, staleOpen,
+    DEFAULT_SETTINGS, withDefaults, baseTarget, targetFor, resolveOff, isNonWorkingOff, holidayOn, easterSunday, frenchHolidays,
+    setDayOff, applySpecialRange,
+    roundMinutes, sessionMinutes, sessionsOn, workedOn, openSession, staleOpen,
     indexByDay, dayStats, rangeStats, balance, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV, parseHR, applyHRAnchor, anchorValid,
+    compareHR, recordComparison, shortcutAction,
     splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits };
 });

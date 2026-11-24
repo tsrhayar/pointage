@@ -19,7 +19,19 @@
     { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Historique", "url": "./#history", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Réglages", "url": "./#settings", "icons": [{ "src": "assets/icons/icon-192.png", "sizes": "192x192" }] }
+    {
+      "name": "Pointer",
+      "short_name": "Pointer",
+      "description": "Pointer l'entrée ou la sortie en un clic",
+      "url": "./?action=punch",
+      "icons": [{ "src": "assets/icons/shortcut-punch.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Voir solde",
+      "short_name": "Solde",
+      "description": "Voir le solde cumulé",
+      "url": "./?action=balance",
+      "icons": [{ "src": "assets/icons/shortcut-balance.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

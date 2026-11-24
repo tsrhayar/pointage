@@ -10,10 +10,10 @@ PWA 100 % statique (HTML, CSS, JS) pour pointer son entrée/sortie, suivre ses h
 ## Fonctionnalités
 - **Entrée / Sortie** en un clic, chrono en direct, plusieurs périodes par jour (les trous entre périodes = pauses).
 - **Tableau de bord** : travaillé aujourd'hui / objectif, reste, **sortie estimée** pour atteindre l'objectif, **sortie pour solde à 0** (rattrape aussi le cumul), semaine en cours, solde cumulé au jour d'hier + « en sortant maintenant ».
-- **Historique** par mois et par semaine : périodes, total, écart du jour, totaux semaine/mois. Toucher un jour pour l'éditer (ajouter/modifier/supprimer des périodes, oubli de pointage) ou le marquer **jour férié / congé / maladie / autre** (objectif 0, ou demi-journée).
-- **Réglages** : objectif par jour (8h par défaut), jours travaillés (lun–ven), objectif hebdo optionnel (réparti sur les jours travaillés), objectif différent par jour, date de début du solde, **solde de départ** (ex. `-1h16` pour reprendre le chiffre des RH), arrondi des périodes (1/5/10/15/30 mn, plus proche/inférieur/supérieur), langue (FR / EN / العربية), thème (auto/clair/sombre).
+- **Historique** par mois et par semaine : périodes, total, écart du jour, totaux semaine/mois. Toucher un jour pour l'éditer (ajouter/modifier/supprimer des périodes, oubli de pointage) ou le marquer **jour férié / congé / maladie / télétravail / autre** (objectif 0, ou demi-journée ; le télétravail reste un jour travaillé, simple libellé).
+- **Réglages** : objectif par jour (8h par défaut), jours travaillés (lun–ven), objectif hebdo optionnel (réparti sur les jours travaillés), objectif différent par jour, date de début du solde, **solde de départ** (ex. `-1h16` pour reprendre le chiffre des RH), arrondi des périodes (1/5/10/15/30 mn, plus proche/inférieur/supérieur), langue (FR / EN / العربية), thème (auto/clair/sombre), **jours fériés français** automatiques.
 - **Données** : sauvegarde/import JSON, export CSV (séparateur `;`, s'ouvre dans Excel), **synchronisation QR** d'un appareil vers un autre (sans serveur).
-- **PWA** : installable (bouton « Installer »), fonctionne hors ligne.
+- **PWA** : installable (bouton « Installer »), fonctionne hors ligne, raccourcis d'icône **Pointer** et **Voir solde**.
 
 Formats de durée acceptés : `8`, `7h30`, `7:30`, `45mn`, `-1h16`. Un nombre seul ≤ 24 = heures (`40` pour l'hebdo = 40 h).
 
@@ -39,7 +39,7 @@ assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 
 ## Mise à jour / publication
 - Tous les chemins sont relatifs : le dossier peut être publié tel quel sur GitHub Pages (ex. `https://<user>.github.io/pointage/`), Netlify, Cloudflare Pages…
-- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v3"` → `"v4"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v4"` → `"v5"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
 
 ## Sauvegarde
 Les données sont liées au navigateur et à l'adresse (localhost ≠ github.io). Effacer les données du navigateur efface les pointages : exporter régulièrement une **Sauvegarde JSON** (Réglages → Données).
@@ -72,3 +72,34 @@ Un aperçu s'affiche avant d'appliquer (nombre de jours/périodes, plage de date
 
 La caméra du téléphone exige une page en **HTTPS** (GitHub Pages convient) ou en **localhost**. Aucun serveur n'est utilisé : le code ne quitte les appareils que via le QR, le partage ou le presse-papiers. Si l'écran affiché n'est pas le bon (PC/téléphone mal détecté), un lien **Je suis sur le PC** / **Je suis sur le téléphone** permet de basculer.
 
+
+## Jours spéciaux et jours fériés de France (v1.3)
+
+Depuis l'historique (bouton **Jours spéciaux**) ou les Réglages, tu peux marquer un jour ou une **période** (ex. congé du 22 au 26 déc.) :
+
+- **Congé**, **Férié**, **Maladie** : l'objectif du jour passe à 0 (ou à la moitié pour une **demi-journée de congé**), le solde n'est pas pénalisé.
+- **Télétravail** : simple libellé, l'objectif et le pointage restent normaux.
+- Un badge apparaît dans l'historique.
+
+Les **jours fériés officiels de la France** (pas du Maroc) sont calculés hors ligne : 1er janvier, lundi de Pâques, 1er mai, 8 mai, Ascension, 14 juillet, 15 août, 1er novembre, 11 novembre, 25 décembre. Le lundi de Pâques, l'Ascension (et le lundi de Pentecôte, optionnel) suivent la date de Pâques (computus).
+
+- Réglage **Appliquer automatiquement les jours fériés français** (activé par défaut).
+- Case **Lundi de Pentecôte** (désactivée par défaut : c'est souvent une journée de solidarité travaillée).
+- Case **Alsace-Moselle** (Vendredi saint et 26 décembre), désactivée par défaut.
+- Tu peux **travailler un jour férié** (le désactiver pour cette date) ou le remettre ensuite. Un jour saisi à la main remplace le férié automatique.
+- Le **plan de récupération** saute les fériés, congés et jours de maladie (pas le télétravail).
+
+## Comparaison avec le message RH (v1.3)
+
+Quand tu colles un nouveau message RH, l'app calcule **son propre solde à cette date** (à partir des pointages, et d'une ancre précédente si elle est plus ancienne) **avant** d'appliquer le chiffre RH. Exemple :
+
+> Calcul de l'app au 19 nov. : −1 h 10 mn — RH : −1 h 16 mn — écart 6 mn
+
+Le bandeau est **vert** si les deux chiffres sont d'accord (à 1 mn près), **orange** sinon. Tu choisis alors **Appliquer** (prendre le chiffre RH comme ancre) ou **Garder mon calcul** (rien ne change au solde). Les dernières comparaisons sont conservées (Réglages).
+
+## Raccourcis PWA (v1.3)
+
+Après installation, un appui long sur l'icône de l'app propose :
+
+- **Pointer** — pointe l'entrée ou la sortie selon l'état du jour, puis affiche une confirmation avec l'heure. L'adresse `./?action=punch` est retirée tout de suite (`history.replaceState`) pour éviter un second pointage si la page est rechargée.
+- **Voir solde** — ouvre l'app et affiche le solde cumulé (`./?action=balance`).
