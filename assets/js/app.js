@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.3.1";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -340,7 +340,13 @@
   }
 
   /* ---------- recovery plan ---------- */
-  const recovery = () => Object.assign({ mode: "month", includeToday: true, days: [] }, data.settings.recovery || {});
+  const recovery = () => C.withDefaults(data.settings).recovery;
+  const toHM = (m) => C.pad(Math.floor((Number(m) || 0) / 60)) + ":" + C.pad(Math.abs(Number(m) || 0) % 60);
+  const fromHM = (s) => {
+    if (s == null || s === "") return null;
+    const [h, m] = String(s).split(":").map(Number);
+    return Number.isFinite(h) ? h * 60 + (Number.isFinite(m) ? m : 0) : null;
+  };
   function renderPlan(s, now) {
     const card = $("#planCard");
     if (s.balanceBefore >= 0) { card.hidden = true; return; }
@@ -364,17 +370,32 @@
       $("#planPicker").innerHTML = cells.join("");
     }
     const p = s.plan, ul = $("#planDays");
+    fillPlanHabits(p);
+    $("#planHabits").hidden = rec.mode === "off";
     if (rec.mode === "off" || !p) { $("#planSummary").textContent = ""; ul.innerHTML = ""; $("#planHint").textContent = ""; return; }
     if (!p.days.length) { $("#planSummary").textContent = ""; ul.innerHTML = `<li><span class="meta">${t("planNoDays")}</span></li>`; $("#planHint").textContent = ""; return; }
     $("#planSummary").textContent = p.perDay === p.perDayMin ? t("planPerDay", { x: dur(p.perDay), n: p.days.length })
       : t("planPerDayRange", { a: dur(p.perDayMin), b: dur(p.perDay), n: p.days.length });
     ul.innerHTML = p.days.map((d) => {
-      const leave = d.key === today && s.running && s.leaveAt ? s.leaveAt : d.leaveAt;
+      const leave = d.leaveAt;
       const label = d.key === today ? t("today") : fmtDate(d.key, { weekday: "short", day: "numeric", month: "short" });
-      return `<li class="${d.key === today ? "is-today" : ""}"><span>${label}</span><span class="x">+${dur(d.extra)}</span>
-        <span class="meta">${t("planTarget", { x: dur(d.target) })} · ${t("planLeave", { t: C.hhmm(leave) })}</span></li>`;
+      const manuel = d.manual ? `<span class="badge manuel">${t("planManual")}</span>` : "";
+      return `<li class="${d.key === today ? "is-today" : ""}" data-plan-row="${d.key}" role="button" tabindex="0">
+        <span>${label}${manuel}</span><span class="x">+${dur(d.extra)}</span>
+        <span class="meta">${t("planEntryShort", { t: toHM(d.start) })} · ${t("planBreaksShort", { x: dur(d.brk) })} · ${t("planLeave", { t: C.hhmm(leave) })}</span></li>`;
     }).join("");
-    $("#planHint").textContent = t("planHint", { s: C.fmtClock(p.habits.start), b: dur(p.habits.brk) });
+    $("#planHint").textContent = t("planHint", { s: toHM(p.habits.start), b: dur(p.habits.brk) });
+  }
+  function fillPlanHabits(p) {
+    const rec = recovery();
+    const autoS = rec.start == null, autoB = rec.brk == null;
+    const start = autoS ? (p && p.habits ? p.habits.start : 9 * 60) : rec.start;
+    const brk = autoB ? (p && p.habits ? p.habits.brk : 60) : rec.brk;
+    const aS = $("#planStartAuto"), aB = $("#planBrkAuto"), iS = $("#planStart"), iB = $("#planBrk");
+    if (document.activeElement !== aS) aS.checked = autoS;
+    if (document.activeElement !== aB) aB.checked = autoB;
+    if (document.activeElement !== iS) { iS.value = toHM(start); iS.disabled = autoS; }
+    if (document.activeElement !== iB) { iB.value = hm(brk); iB.disabled = autoB; }
   }
   function setRecovery(patch) { data.settings.recovery = Object.assign(recovery(), patch); persist(); render(); }
   $("#planMode").addEventListener("change", (e) => {
@@ -393,6 +414,61 @@
     e.target.checked ? days.add(k) : days.delete(k);
     setRecovery({ days: [...days].sort() });
   });
+  $("#planStartAuto").addEventListener("change", (e) => {
+    if (e.target.checked) setRecovery({ start: null });
+    else setRecovery({ start: fromHM($("#planStart").value) ?? 9 * 60 });
+  });
+  $("#planBrkAuto").addEventListener("change", (e) => {
+    if (e.target.checked) setRecovery({ brk: null });
+    else { const v = C.parseDur($("#planBrk").value); setRecovery({ brk: v != null && v >= 0 ? v : 60 }); }
+  });
+  $("#planStart").addEventListener("change", () => {
+    const v = fromHM($("#planStart").value); if (v != null) setRecovery({ start: v });
+  });
+  $("#planBrk").addEventListener("change", () => {
+    const v = C.parseDur($("#planBrk").value); if (v != null && v >= 0) setRecovery({ brk: v });
+  });
+
+  let planDayKey = null;
+  function openPlanDay(k) {
+    planDayKey = k;
+    const rec = recovery(), ov = (rec.dayOverrides || {})[k] || {};
+    const times = C.planTimes(data, k, Date.now());
+    $("#planDayTitle").textContent = t("planDayTitle", { d: k === C.dateKey(Date.now()) ? t("today") : fmtDate(k, { weekday: "short", day: "numeric", month: "short" }) });
+    const autoS = ov.start == null, autoB = ov.brk == null;
+    $("#planDayStartAuto").checked = autoS;
+    $("#planDayBrkAuto").checked = autoB;
+    $("#planDayStart").value = toHM(autoS ? times.planStart : ov.start);
+    $("#planDayBrk").value = hm(autoB ? times.planBrk : ov.brk);
+    $("#planDayStart").disabled = autoS;
+    $("#planDayBrk").disabled = autoB;
+    if (!$("#planDayDialog").open) $("#planDayDialog").showModal();
+  }
+  function savePlanDay(reset) {
+    if (!planDayKey) return;
+    const rec = recovery();
+    const dayOverrides = Object.assign({}, rec.dayOverrides || {});
+    if (reset || ($("#planDayStartAuto").checked && $("#planDayBrkAuto").checked)) delete dayOverrides[planDayKey];
+    else {
+      const row = {};
+      if (!$("#planDayStartAuto").checked) { const v = fromHM($("#planDayStart").value); if (v != null) row.start = v; }
+      if (!$("#planDayBrkAuto").checked) { const v = C.parseDur($("#planDayBrk").value); if (v != null && v >= 0) row.brk = v; }
+      if (Object.keys(row).length) dayOverrides[planDayKey] = row; else delete dayOverrides[planDayKey];
+    }
+    setRecovery({ dayOverrides });
+    $("#planDayDialog").close();
+    toast(t("saved"));
+  }
+  $("#planDays").addEventListener("click", (e) => { const li = e.target.closest("[data-plan-row]"); if (li) openPlanDay(li.dataset.planRow); });
+  $("#planDays").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const li = e.target.closest("[data-plan-row]"); if (!li) return;
+    e.preventDefault(); openPlanDay(li.dataset.planRow);
+  });
+  $("#planDayStartAuto").addEventListener("change", () => { $("#planDayStart").disabled = $("#planDayStartAuto").checked; });
+  $("#planDayBrkAuto").addEventListener("change", () => { $("#planDayBrk").disabled = $("#planDayBrkAuto").checked; });
+  $("#planDayReset").addEventListener("click", (e) => { e.preventDefault(); savePlanDay(true); });
+  $("#planDayForm").addEventListener("submit", (e) => { if (e.submitter && e.submitter.value === "default") { e.preventDefault(); savePlanDay(false); } });
 
   /* ---------- HR message (balance anchor) ---------- */
   const shortDate = (k) => fmtDate(k, { day: "numeric", month: "short", ...(k.slice(0, 4) !== C.dateKey(Date.now()).slice(0, 4) ? { year: "numeric" } : {}) });

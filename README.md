@@ -39,7 +39,7 @@ assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 
 ## Mise à jour / publication
 - Tous les chemins sont relatifs : le dossier peut être publié tel quel sur GitHub Pages (ex. `https://<user>.github.io/pointage/`), Netlify, Cloudflare Pages…
-- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v4"` → `"v5"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v5"` → `"v6"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
 
 ## Sauvegarde
 Les données sont liées au navigateur et à l'adresse (localhost ≠ github.io). Effacer les données du navigateur efface les pointages : exporter régulièrement une **Sauvegarde JSON** (Réglages → Données).
@@ -56,8 +56,15 @@ Bouton **📋 Coller message RH** (écran Aujourd'hui, carte « Solde cumulé »
 Quand le solde cumulé est négatif, une carte **Plan de récupération** répartit le retard :
 - **Jusqu'à la fin du mois** / **Jusqu'à la fin de la semaine** (jours travaillés restants, jours off exclus), ou **Jours choisis** (sélecteur sur 5 semaines, samedi possible), ou **Désactivé**.
 - Option **Inclure aujourd'hui (si pas terminé)**. Répartition en minutes entières, le reste va aux premiers jours (76 mn sur 6 jours → 13,13,13,13,12,12).
-- Pour chaque jour : minutes en plus, objectif du jour et heure de sortie estimée (d'après ton heure d'arrivée et ta pause habituelles). La **sortie estimée** du tableau de bord inclut le plan du jour.
-- Le mode choisi est mémorisé.
+- Pour chaque jour : minutes en plus, et une ligne explicite **entrée · pauses · sortie ≈** (`sortie ≈ entrée + objectif + pauses`).
+- Par défaut, l'entrée et le total des pauses viennent du **dernier jour travaillé**. Tu peux fixer une **Entrée prévue** et des **Pauses prévues** pour tout le plan, ou toucher un jour pour un réglage manuel (badge **manuel**). « Auto (dernier jour) » les recalcule ; tant que tu ne reviens pas à l'auto, les valeurs manuelles restent enregistrées (rechargement, sauvegarde JSON, synchro).
+- **Aujourd'hui** : si tu as déjà pointé, l'estimation utilise la vraie entrée et les pauses déjà prises, plus le reste de pause prévue si tu en as fixé une ; sinon, les horaires prévus/auto. Ces horaires ne changent pas le solde.
+- La **sortie estimée** du tableau de bord inclut le plan du jour.
+- Le mode choisi et les horaires manuels sont mémorisés.
+
+## Horaires manuels du plan (v1.3.1)
+
+Sur le plan de récupération, l'heure de sortie n'est plus une boîte noire : chaque jour affiche l'entrée et les pauses utilisées. Tu règles une valeur par défaut pour tout le plan, ou jour par jour, et tu reviens à **Auto (dernier jour)** quand tu veux. Voir la section Plan de récupération ci-dessus.
 
 ## Synchroniser deux appareils (v1.2)
 

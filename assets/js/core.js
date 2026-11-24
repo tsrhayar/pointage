@@ -34,14 +34,19 @@
     lang: "fr",
     theme: "auto",
     hrAnchor: null,                   // { date, minutes, text, appliedAt } from a pasted HR message
-    recovery: { mode: "month", includeToday: true, days: [] },   // plan to make up a negative balance: off | month | week | custom
+    recovery: { mode: "month", includeToday: true, days: [], start: null, brk: null, dayOverrides: {} },
     holidays: { enabled: true, pentecost: false, alsace: false }, // official French public holidays (not Morocco)
     holidaySkipped: [],               // auto-holiday keys the user chose to work
     hrComparisons: [],                // last HR vs app balance comparisons
   };
   const withDefaults = (s) => Object.assign({}, DEFAULT_SETTINGS, s || {}, {
     perDay: Object.assign({}, DEFAULT_SETTINGS.perDay, (s && s.perDay) || {}),
-    recovery: Object.assign({}, DEFAULT_SETTINGS.recovery, (s && s.recovery) || {}),
+    recovery: (function () {
+      const rec = Object.assign({}, DEFAULT_SETTINGS.recovery, (s && s.recovery) || {});
+      rec.days = Array.isArray(rec.days) ? rec.days.slice() : [];
+      rec.dayOverrides = Object.assign({}, rec.dayOverrides || {});
+      return rec;
+    })(),
     holidays: Object.assign({}, DEFAULT_SETTINGS.holidays, (s && s.holidays) || {}),
     holidaySkipped: Array.isArray(s && s.holidaySkipped) ? s.holidaySkipped.slice() : [],
     hrComparisons: Array.isArray(s && s.hrComparisons) ? s.hrComparisons.slice() : [],
@@ -206,18 +211,45 @@
     const base = Math.floor(total / n), r = total - base * n;
     return Array.from({ length: n }, (_, i) => base + (i < r ? 1 : 0));
   }
-  const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor((b.length - 1) / 2)]; };
-  /* Usual first clock-in (minutes after midnight) and usual total break, from the last 20 worked days before `k`. */
+  const minsAfterMidnight = (ms) => { const d = new Date(ms); return d.getHours() * 60 + d.getMinutes(); };
+  /* First clock-in and total pauses of the last worked day strictly before `k` (defaults 09:00 and 1 h). */
   function habits(data, k) {
-    const idx = indexByDay(data.sessions);
-    const keys = [...idx.keys()].filter((d) => d < k).sort().slice(-20);
-    const starts = [], breaks = [];
-    for (const d of keys) {
-      const l = idx.get(d); const st = new Date(l[0].start); starts.push(st.getHours() * 60 + st.getMinutes());
-      if (l.every((x) => x.end)) breaks.push(l.slice(1).reduce((t, x, i) => t + Math.max(0, Math.round((x.start - l[i].end) / MIN)), 0));
-    }
-    return { start: median(starts) ?? 9 * 60, brk: median(breaks) ?? 60 };
+    const idx = indexByDay((data && data.sessions) || []);
+    const last = [...idx.keys()].filter((d) => d < k).sort().pop();
+    if (!last) return { start: 9 * 60, brk: 60, key: null };
+    const l = idx.get(last);
+    const brk = l.slice(1).reduce((t, x, i) => t + (l[i].end ? Math.max(0, Math.round((x.start - l[i].end) / MIN)) : 0), 0);
+    return { start: minsAfterMidnight(l[0].start), brk, key: last };
   }
+  /* Resolved entry and pauses for a plan day. Plan-level start/brk override the last day; per-day overrides win.
+     For today, if already clocked in: real entry and real pauses so far, plus remaining planned pause when one was set. */
+  function planTimes(data, k, now) {
+    now = now == null ? Date.now() : now;
+    const today = dateKey(now);
+    const rec = withDefaults(data && data.settings).recovery;
+    const auto = habits(data, today);
+    const planStart = rec.start != null && rec.start !== "" ? +rec.start : auto.start;
+    const planBrk = rec.brk != null && rec.brk !== "" ? +rec.brk : auto.brk;
+    const ov = (rec.dayOverrides || {})[k] || {};
+    const hasStart = ov.start != null && ov.start !== "";
+    const hasBrk = ov.brk != null && ov.brk !== "";
+    let start = hasStart ? +ov.start : planStart;
+    let brk = hasBrk ? +ov.brk : planBrk;
+    const manual = hasStart || hasBrk;
+    let fromClock = false;
+    if (k === today) {
+      const list = sessionsOn(k, (data && data.sessions) || []) || [];
+      if (list.length) {
+        fromClock = true;
+        start = minsAfterMidnight(list[0].start);
+        const realBrk = dayStats(k, data, now).breaks;
+        const pauseSet = hasBrk || (rec.brk != null && rec.brk !== "");
+        brk = pauseSet ? Math.max(realBrk, hasBrk ? +ov.brk : planBrk) : realBrk;
+      }
+    }
+    return { start, brk, autoStart: auto.start, autoBrk: auto.brk, planStart, planBrk, manual, fromClock, autoKey: auto.key };
+  }
+  const leaveFromTimes = (k, start, brk, target) => atTime(k, "00:00") + (start + brk + target) * MIN;
   /* Is today finished? (sessions recorded, nothing running and the day target reached) */
   function todayFinished(data, now) {
     const k = dateKey(now), d = dayStats(k, data, now);
@@ -248,8 +280,9 @@
     const h = habits(data, today);
     const days = keys.map((k, i) => {
       const target = targetFor(k, s, data.daysOff) + parts[i];
-      const brk = target > 6 * 60 ? h.brk : 0;
-      return { key: k, extra: parts[i], target, leaveAt: atTime(k, "00:00") + (h.start + brk + target) * MIN };
+      const t = planTimes(data, k, now);
+      return { key: k, extra: parts[i], target, start: t.start, brk: t.brk, leaveAt: leaveFromTimes(k, t.start, t.brk, target),
+        manual: t.manual, fromClock: t.fromClock };
     });
     return { mode: rec.mode, includeToday: rec.includeToday, deficit, days, perDay: parts.length ? Math.max(...parts) : 0,
       perDayMin: parts.length ? Math.min(...parts) : 0, todayExtra: days[0] && days[0].key === today ? days[0].extra : 0, habits: h };
@@ -268,13 +301,18 @@
     const remaining = Math.max(0, goal - d.worked);
     const before = balance(data, addDays(k, -1), now).minutes;          // through yesterday
     const toZero = Math.max(0, d.target - d.worked - before);             // to end the day with a cumulative 0
-    const base = running ? now : null;
+    const times = planTimes(data, k, now);
+    const leaveOf = (need, total) => {
+      if (need <= 0) return null;
+      if (d.sessions.length) return leaveFromTimes(k, times.start, times.brk, total);
+      return running ? now + need * MIN : null;
+    };
     return {
-      key: k, ...d, running, open, remaining, plan, planExtra, goal,
+      key: k, ...d, running, open, remaining, plan, planExtra, goal, planTimes: times,
       balanceBefore: before, balanceNow: before + d.diff,
-      leaveAt: base != null && remaining > 0 ? base + remaining * MIN : null,
-      leaveAtTarget: base != null && d.target - d.worked > 0 ? base + (d.target - d.worked) * MIN : null,
-      leaveAtZero: base != null && toZero > 0 ? base + toZero * MIN : null,
+      leaveAt: leaveOf(remaining, goal),
+      leaveAtTarget: leaveOf(d.target - d.worked, d.target),
+      leaveAtZero: leaveOf(toZero, d.worked + toZero),
       toZero,
     };
   }
@@ -434,5 +472,5 @@
     roundMinutes, sessionMinutes, sessionsOn, workedOn, openSession, staleOpen,
     indexByDay, dayStats, rangeStats, balance, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV, parseHR, applyHRAnchor, anchorValid,
     compareHR, recordComparison, shortcutAction,
-    splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits };
+    splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits, planTimes, leaveFromTimes };
 });

@@ -77,6 +77,18 @@
           <label class="switch"><input type="checkbox" id="planToday"><span class="small" data-i18n="planIncludeToday"></span></label>
         </div>
         <div id="planPickerWrap" hidden><p class="small muted" data-i18n="planPick"></p><div id="planPicker" class="plan-picker"></div></div>
+        <div id="planHabits" class="plan-habits">
+          <label class="plan-hab">
+            <span data-i18n="planEntry">Entrée prévue</span>
+            <label class="switch"><input type="checkbox" id="planStartAuto"><span class="small" data-i18n="planAuto">Auto (dernier jour)</span></label>
+            <input type="time" id="planStart" step="60">
+          </label>
+          <label class="plan-hab">
+            <span data-i18n="planBreaks">Pauses prévues</span>
+            <label class="switch"><input type="checkbox" id="planBrkAuto"><span class="small" data-i18n="planAuto">Auto (dernier jour)</span></label>
+            <input id="planBrk" inputmode="text" placeholder="1 h">
+          </label>
+        </div>
         <p id="planSummary" class="plan-summary"></p>
         <ul id="planDays" class="plan-days"></ul>
         <p id="planHint" class="muted small"></p>
@@ -324,6 +336,30 @@
       <h4 class="sync-h" data-i18n="specialList">Jours ajoutés</h4>
       <ul id="offUserList" class="off-list"></ul>
     </div>
+  </dialog>
+
+  <dialog id="planDayDialog">
+    <form method="dialog" id="planDayForm">
+      <header class="dlg-head"><h3 id="planDayTitle"></h3><button class="btn icon" value="cancel" aria-label="Fermer">✕</button></header>
+      <p class="muted small" data-i18n="planDayHelp"></p>
+      <div class="form">
+        <label class="plan-hab">
+          <span data-i18n="planEntry">Entrée prévue</span>
+          <label class="switch"><input type="checkbox" id="planDayStartAuto"><span class="small" data-i18n="planAutoDay">Auto</span></label>
+          <input type="time" id="planDayStart" step="60">
+        </label>
+        <label class="plan-hab">
+          <span data-i18n="planBreaks">Pauses prévues</span>
+          <label class="switch"><input type="checkbox" id="planDayBrkAuto"><span class="small" data-i18n="planAutoDay">Auto</span></label>
+          <input id="planDayBrk" inputmode="text" placeholder="1 h">
+        </label>
+      </div>
+      <button type="button" class="btn ghost block" id="planDayReset" data-i18n="planDayReset">Revenir à l'auto</button>
+      <footer class="dlg-foot">
+        <button class="btn" value="cancel" data-i18n="cancel">Annuler</button>
+        <button class="btn primary" value="default" id="planDaySave" data-i18n="save">Enregistrer</button>
+      </footer>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

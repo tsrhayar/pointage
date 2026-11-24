@@ -245,3 +245,13 @@ textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 #offDialog { width: min(560px, calc(100vw - 16px)); }
 #offDialog .sync-dlg { padding: 16px; display: grid; gap: 12px; max-height: 88vh; overflow: auto; }
 #holidaysCard { display: grid; gap: 10px; }
+
+.plan-habits { display: grid; gap: 10px; }
+.plan-hab { display: grid; gap: 6px; }
+.plan-hab > span { font-size: .82rem; font-weight: 600; }
+.plan-days li { cursor: pointer; }
+.plan-days li:hover, .plan-days li:focus-visible { background: var(--primary-soft); }
+.plan-days .badge.manuel { background: var(--primary-soft); color: var(--primary); margin-inline-start: 6px; font-size: .68rem; vertical-align: middle; }
+#planDayDialog { width: min(520px, calc(100vw - 20px)); }
+#planDayDialog form { padding: 16px; display: grid; gap: 12px; }
+#planDayReset { justify-self: start; }
