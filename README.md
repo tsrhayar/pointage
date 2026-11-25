@@ -13,6 +13,7 @@ PWA 100 % statique (HTML, CSS, JS) pour pointer son entrée/sortie, suivre ses h
 - **Historique** par mois et par semaine : périodes, total, écart du jour, totaux semaine/mois. Toucher un jour pour l'éditer (ajouter/modifier/supprimer des périodes, oubli de pointage) ou le marquer **jour férié / congé / maladie / télétravail / autre** (objectif 0, ou demi-journée ; le télétravail reste un jour travaillé, simple libellé).
 - **Réglages** : objectif par jour (8h par défaut), jours travaillés (lun–ven), objectif hebdo optionnel (réparti sur les jours travaillés), objectif différent par jour, date de début du solde, **solde de départ** (ex. `-1h16` pour reprendre le chiffre des RH), arrondi des périodes (1/5/10/15/30 mn, plus proche/inférieur/supérieur), langue (FR / EN / العربية), thème (auto/clair/sombre), **jours fériés français** automatiques.
 - **Données** : sauvegarde/import JSON, export CSV (séparateur `;`, s'ouvre dans Excel), **synchronisation QR** d'un appareil vers un autre (sans serveur).
+- **Horaires de prière** (v1.4.2) : carte du jour pour Marrakech (Fajr, Chourouk, Dhuhr, Asr, Maghrib, Isha), calculés hors ligne selon la méthode du ministère des Habous, à la minute près toute l'année. Le tableau officiel publié (oct.–nov. 2026) reste une priorité quand la date est couverte. Compte à rebours, compteur « منذ » pendant 30 min, cases **Afficher sur mobile** / **Afficher sur PC** (indépendantes, conservées après synchro).
 - **PWA** : installable (bouton « Installer »), fonctionne hors ligne, raccourcis d'icône **Pointer** et **Voir solde**.
 
 Formats de durée acceptés : `8`, `7h30`, `7:30`, `45mn`, `-1h16`. Un nombre seul ≤ 24 = heures (`40` pour l'hebdo = 40 h).
@@ -25,11 +26,13 @@ Formats de durée acceptés : `8`, `7h30`, `7:30`, `45mn`, `-1h16`. Un nombre se
 ## Fichiers
 ```
 index.html               page unique
-manifest.webmanifest     manifeste PWA (chemins relatifs, start_url/scope "./")
+manifest.webmanifest     manifeste PWA (chemins relatifs, start_url/scope "./", id "/pointage/")
 sw.js                    service worker (cache de l'app, hors ligne)
 .htaccess                type MIME du manifeste + pas de cache pour sw.js (Apache/Laragon)
 assets/css/style.css
 assets/js/core.js        calculs purs (dates, objectifs, solde, formats, CSV)
+assets/js/prayer-marrakech.js  tableau officiel Habous Marrakech (1er oct. – 30 nov. 2026)
+assets/js/prayer.js      horaires de prière (méthode Habous + tableau officiel en priorité)
 assets/js/i18n.js        textes FR / EN / AR
 assets/js/sync.js        compression, QR (découpage, somme de contrôle, fusion)
 assets/js/vendor/        lz-string, qrcode-generator, jsQR (hors ligne, pas de CDN)
@@ -39,7 +42,12 @@ assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 
 ## Mise à jour / publication
 - Tous les chemins sont relatifs : le dossier peut être publié tel quel sur GitHub Pages (ex. `https://<user>.github.io/pointage/`), Netlify, Cloudflare Pages…
-- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v5"` → `"v6"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v9"` → `"v10"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+
+
+## Identifiant PWA (v1.3.2)
+
+L'`id` du manifeste est désormais `/pointage/` (au lieu de `./`). Chrome résout `id` par rapport à l'origine de `start_url` : `"./"` devenait `https://tsrhayar.github.io/` et entrait en collision avec une autre app du même domaine (Rakaat). `start_url` et `scope` restent inchangés. Après mise à jour, réinstalle l'app bureau si elle ouvre encore la mauvaise app.
 
 ## Sauvegarde
 Les données sont liées au navigateur et à l'adresse (localhost ≠ github.io). Effacer les données du navigateur efface les pointages : exporter régulièrement une **Sauvegarde JSON** (Réglages → Données).
@@ -110,3 +118,19 @@ Après installation, un appui long sur l'icône de l'app propose :
 
 - **Pointer** — pointe l'entrée ou la sortie selon l'état du jour, puis affiche une confirmation avec l'heure. L'adresse `./?action=punch` est retirée tout de suite (`history.replaceState`) pour éviter un second pointage si la page est rechargée.
 - **Voir solde** — ouvre l'app et affiche le solde cumulé (`./?action=balance`).
+
+## Horaires de prière — Marrakech (v1.4.2)
+
+Sur l'écran **Aujourd'hui**, une carte compacte affiche les horaires du jour : **Fajr, Chourouk, Dhuhr, Asr, Maghrib, Isha**.
+
+- **Calcul hors ligne (v1.4.2)** : pour le préréglage Marrakech, les horaires sont calculés selon la méthode du **ministère des Habous et des Affaires islamiques** (la même convention que les applications qui retrouvent le tableau officiel sans réseau, p. ex. Salat First) :
+  - soleil apparent de Meeus (nutation complète, équation du temps du ch. 28), itéré à l'instant de chaque prière ;
+  - Fajr 19°, Isha 17° (altitudes vraies) ; Asr chaféite sur le soleil apparent (ombre de midi, réfraction de Sæmundsson à midi et de Bennett à l'Asr) ;
+  - Dhuhr = transit + 5 min ; Chourouk 1 min avant, et Maghrib 1,8 min après, le soleil à l'altitude −(34′ + semi-diamètre) moins la dépression d'horizon de la ville (est au lever, ouest au Maghrib) ;
+  - Fajr arrondi à la minute inférieure, les autres à la minute la plus proche ;
+  - horloge du ministère : **GMT+1 jusqu'au 16 septembre 2026 inclus, GMT à partir du 17 septembre 2026** (les horloges légales n'ont basculé que le 20 septembre) ;
+  - point de calcul de Marrakech : **31,6283° N, 8,0332° O**, dépressions 0,828° (est) et 0,808° (ouest). L'écran des réglages garde les coordonnées d'affichage 31,6295° N, 7,9811° O.
+- **Écart avec le tableau officiel** : 0 minute (max et moyenne) pour les 6 horaires, sur les **61 jours** encore publiés (1er octobre – 30 novembre 2026, 2 mois). Les mois plus anciens n'étaient plus en ligne sur habous.gov.ma (404) au 25 nov. 2026. La mention « calcul approximatif » a été retirée.
+- **Tableau officiel en priorité** : les fichiers [horaires-2026-10.js](https://www.habous.gov.ma/data/horaires-2026-10.js) et [horaires-2026-11.js](https://www.habous.gov.ma/data/horaires-2026-11.js) (ville **104**, مراكش, `fuseau: GMT`), récupérés le **25 nov. 2026**, restent intégrés dans `assets/js/prayer-marrakech.js` et sont utilisés tels quels quand la date est couverte. Ailleurs, le même calcul sert pour n'importe quel jour de l'année. D'autres coordonnées utilisent la même méthode, avec les dépressions par défaut au niveau de la mer.
+- La **prochaine prière** est mise en évidence, avec un compte à rebours (`dans 12:05`). Pendant les **30 minutes** qui suivent l'heure d'une prière, la carte affiche un compteur « **منذ** 2:35 » et met cette prière en évidence ; ensuite elle repasse au compte à rebours vers la suivante. Chourouk n'est pas une prière : il apparaît dans la liste et le compte à rebours, mais ne déclenche pas le compteur « منذ ».
+- Dans **Réglages → Affichage** : deux cases indépendantes, **Afficher sur mobile** et **Afficher sur PC** (activées par défaut), plus des champs facultatifs de latitude / longitude (bouton **Reprendre Marrakech**). Un appareil est traité comme *mobile* si l'user-agent indique un téléphone, ou si le pointeur principal est tactile (`pointer: coarse`), ou si la largeur de la fenêtre est < 768 px ; sinon c'est un *PC*. Le test est fait **sur l'appareil lui-même** : après une synchro PC ↔ mobile, les deux drapeaux voyagent dans `settings.prayer`, mais chaque appareil n'applique que le sien. L'ancien réglage unique `show` est migré (les deux cases prennent sa valeur).

@@ -38,6 +38,7 @@
     holidays: { enabled: true, pentecost: false, alsace: false }, // official French public holidays (not Morocco)
     holidaySkipped: [],               // auto-holiday keys the user chose to work
     hrComparisons: [],                // last HR vs app balance comparisons
+    prayer: { showMobile: true, showDesktop: true, lat: 31.6295, lng: -7.9811 }, // Marrakech, official Habous table + fallback
   };
   const withDefaults = (s) => Object.assign({}, DEFAULT_SETTINGS, s || {}, {
     perDay: Object.assign({}, DEFAULT_SETTINGS.perDay, (s && s.perDay) || {}),
@@ -50,6 +51,17 @@
     holidays: Object.assign({}, DEFAULT_SETTINGS.holidays, (s && s.holidays) || {}),
     holidaySkipped: Array.isArray(s && s.holidaySkipped) ? s.holidaySkipped.slice() : [],
     hrComparisons: Array.isArray(s && s.hrComparisons) ? s.hrComparisons.slice() : [],
+    prayer: (function () {
+      const raw = (s && s.prayer) || {};
+      const p = Object.assign({}, DEFAULT_SETTINGS.prayer, raw);
+      if (Object.prototype.hasOwnProperty.call(raw, "show")
+          && !Object.prototype.hasOwnProperty.call(raw, "showMobile")
+          && !Object.prototype.hasOwnProperty.call(raw, "showDesktop")) {
+        p.showMobile = p.showDesktop = !!raw.show;
+      }
+      delete p.show;
+      return p;
+    })(),
   });
 
   /* Base target for a weekday, ignoring days off. */

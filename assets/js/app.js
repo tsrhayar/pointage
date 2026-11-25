@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.3.1";
+  const APP_VERSION = "1.4.2";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -127,6 +127,7 @@
 
     $("#hrAnchorLine").textContent = hrAnchorText();
     renderPlan(s, now);
+    renderPrayer(now);
 
     // week
     const ws = C.weekStart(s.key);
@@ -164,6 +165,49 @@
     const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), ss = sec % 60;
     const running = list.some((x) => !x.end);
     $("#timer").textContent = running ? `${h}:${C.pad(m)}:${C.pad(ss)}` : `${C.pad(h)}:${C.pad(m)}`;
+    tickPrayer(now);
+  }
+
+  /* ---------- prayer times (Marrakech, offline) ---------- */
+  const Prayer = window.PointagePrayer;
+  function prayerOpts() {
+    const p = C.withDefaults(data.settings).prayer;
+    return { lat: p.lat, lng: p.lng };
+  }
+  function renderPrayer(now) {
+    const card = $("#prayerCard");
+    const p = C.withDefaults(data.settings).prayer;
+    if (!Prayer.prayerVisible(p)) { card.hidden = true; return; }
+    card.hidden = false;
+    const st = Prayer.statusAt(now || Date.now(), prayerOpts());
+    $("#prayerCity").textContent = st.coords.isDefault ? t("prayerCity") : `${st.coords.lat.toFixed(4)}, ${st.coords.lng.toFixed(4)}`;
+    const note = $("#prayerApprox");
+    if (st.approx) { note.hidden = false; note.textContent = t("prayerApprox"); }
+    else { note.hidden = true; note.textContent = ""; }
+    const items = Prayer.PRAYER_KEYS.map((k) => {
+      const on = st.prayer === k;
+      const cls = on ? (st.mode === "since" ? "is-current" : "is-next") : "";
+      return `<li class="${cls}" data-prayer="${k}"><span class="label">${t(Prayer.NAME_KEYS[k])}</span><b>${st.times[k]}</b></li>`;
+    });
+    $("#prayerTimes").innerHTML = items.join("");
+    fillPrayerStatus(st);
+  }
+  function tickPrayer(now) {
+    const card = $("#prayerCard");
+    if (!card || card.hidden) return;
+    const st = Prayer.statusAt(now || Date.now(), prayerOpts());
+    const prev = $("#prayerTimes li.is-next, #prayerTimes li.is-current");
+    if (!prev || prev.dataset.prayer !== st.prayer || (st.mode === "since") !== prev.classList.contains("is-current")) {
+      renderPrayer(now);
+      return;
+    }
+    fillPrayerStatus(st);
+  }
+  function fillPrayerStatus(st) {
+    const name = t(st.nameKey);
+    const line = $("#prayerStatus");
+    if (st.mode === "since") line.textContent = `${t("prayerNow", { name })} · ${t("prayerSince", { t: st.clock })}`;
+    else line.textContent = `${t("prayerNext", { name })} · ${t("prayerIn", { t: st.clock })}`;
   }
 
   /* ---------- HISTORY view ---------- */
@@ -280,6 +324,11 @@
     f.rounding.value = String(s.rounding || 0);
     f.roundMode.value = s.roundMode;
     f.lang.value = s.lang; f.theme.value = s.theme;
+    const pr = C.withDefaults(s).prayer;
+    f.prayerShowMobile.checked = pr.showMobile !== false;
+    f.prayerShowDesktop.checked = pr.showDesktop !== false;
+    f.prayerLat.value = pr.lat != null ? String(pr.lat) : "";
+    f.prayerLng.value = pr.lng != null ? String(pr.lng) : "";
     const order = [1, 2, 3, 4, 5, 6, 0];
     $("#workDays").innerHTML = order.map((d) => `<label class="chip"><input type="checkbox" name="wd" value="${d}" ${s.workDays.includes(d) ? "checked" : ""}><span>${L_.days[d]}</span></label>`).join("");
     $("#perDay").innerHTML = order.map((d) => `<label>${L_.days[d]}<input name="pd${d}" value="${hm(s.perDay[d] || 0)}"></label>`).join("");
@@ -316,6 +365,12 @@
     s.initialBalance = init;
     s.rounding = +f.rounding.value; s.roundMode = f.roundMode.value;
     s.lang = f.lang.value; s.theme = f.theme.value;
+    const coords = Prayer.resolveCoords({ lat: f.prayerLat.value, lng: f.prayerLng.value });
+    s.prayer = {
+      showMobile: !!f.prayerShowMobile.checked,
+      showDesktop: !!f.prayerShowDesktop.checked,
+      lat: coords.lat, lng: coords.lng,
+    };
     if (s.hrAnchor && !C.anchorValid(s)) s.hrAnchor = null;   // start date / balance edited by hand → anchor no longer applies
     data.settings = s; persist(); applyTheme(); applyStatic(); render(); toast(t("saved"));
   }
@@ -576,6 +631,11 @@
   $("#dayForm").addEventListener("submit", (e) => { if (e.submitter && e.submitter.value === "default") { e.preventDefault(); saveDay(); } });
   $("#settingsForm").addEventListener("submit", saveSettings);
   $("#settingsForm").perDayEnabled.addEventListener("change", (e) => ($("#perDay").hidden = !e.target.checked));
+  $("#prayerResetCity").addEventListener("click", () => {
+    const f = $("#settingsForm");
+    f.prayerLat.value = String(Prayer.MARRAKECH.lat);
+    f.prayerLng.value = String(Prayer.MARRAKECH.lng);
+  });
   $("#langSelect").addEventListener("change", (e) => { data.settings.lang = e.target.value; persist(); applyStatic(); render(); });
   $("#exportJson").addEventListener("click", () => download(`pointage-${stamp()}.json`, JSON.stringify(data, null, 2), "application/json"));
   $("#exportCsv").addEventListener("click", () => download(`pointage-${stamp()}.csv`, C.toCSV(data, Date.now()), "text/csv;charset=utf-8"));

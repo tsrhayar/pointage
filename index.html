@@ -59,6 +59,13 @@
         </div>
       </div>
 
+      <div class="card prayer-card" id="prayerCard">
+        <div class="card-head"><h2 data-i18n="prayerTitle">Horaires de prière</h2><span id="prayerCity" class="muted small">Marrakech</span></div>
+        <p id="prayerStatus" class="prayer-status"></p>
+        <p id="prayerApprox" class="muted small prayer-approx" hidden></p>
+        <ol id="prayerTimes" class="prayer-times"></ol>
+      </div>
+
       <div class="card balance-card" id="balanceCard">
         <div class="card-head"><h2 data-i18n="balance">Solde cumulé</h2><span id="balanceAt" class="muted small"></span></div>
         <p id="balanceMain" class="balance-main">–</p>
@@ -150,6 +157,14 @@
           <label><span data-i18n="sLang">Langue</span><select name="lang"><option value="fr">Français</option><option value="en">English</option><option value="ar">العربية</option></select></label>
           <label><span data-i18n="sTheme">Thème</span><select name="theme"><option value="auto" data-i18n="thAuto"></option><option value="light" data-i18n="thLight"></option><option value="dark" data-i18n="thDark"></option></select></label>
         </div>
+        <label class="switch"><input type="checkbox" name="prayerShowMobile" checked><span data-i18n="prayerShowMobile">Afficher sur mobile</span></label>
+        <label class="switch"><input type="checkbox" name="prayerShowDesktop" checked><span data-i18n="prayerShowDesktop">Afficher sur PC</span></label>
+        <p class="muted small" data-i18n="prayerHelp">Pour Marrakech, les horaires suivent la méthode du ministère des Habous (calcul hors ligne à la minute près, toute l'année). Le tableau officiel publié (1er oct. – 30 nov. 2026) est utilisé en priorité quand la date est couverte.</p>
+        <div class="row2">
+          <label><span data-i18n="prayerLat">Latitude</span><input name="prayerLat" inputmode="decimal" placeholder="31.6295"></label>
+          <label><span data-i18n="prayerLng">Longitude</span><input name="prayerLng" inputmode="decimal" placeholder="-7.9811"></label>
+        </div>
+        <button type="button" class="btn small ghost" id="prayerResetCity" data-i18n="prayerPreset">Reprendre Marrakech</button>
         <button class="btn primary block" type="submit" data-i18n="save">Enregistrer</button>
       </form>
 
@@ -366,6 +381,8 @@
   <noscript><p class="card">Pointage nécessite JavaScript.</p></noscript>
 
   <script src="assets/js/core.js"></script>
+  <script src="assets/js/prayer-marrakech.js"></script>
+  <script src="assets/js/prayer.js"></script>
   <script src="assets/js/i18n.js"></script>
   <script src="assets/js/vendor/lz-string.min.js"></script>
   <script src="assets/js/vendor/qrcode.min.js"></script>
