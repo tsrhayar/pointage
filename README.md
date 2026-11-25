@@ -9,7 +9,7 @@ PWA 100 % statique (HTML, CSS, JS) pour pointer son entrée/sortie, suivre ses h
 
 ## Fonctionnalités
 - **Entrée / Sortie** en un clic, chrono en direct, plusieurs périodes par jour (les trous entre périodes = pauses).
-- **Tableau de bord** : travaillé aujourd'hui / objectif, reste, **sortie estimée** pour atteindre l'objectif, **sortie pour solde à 0** (rattrape aussi le cumul), semaine en cours, solde cumulé au jour d'hier + « en sortant maintenant ».
+- **Tableau de bord** : travaillé aujourd'hui / objectif, reste, **sortie estimée** pour atteindre l'objectif, **sortie pour solde à 0** (rattrape aussi le cumul), semaine en cours, solde cumulé au jour d'hier + « en sortant maintenant ». Bouton **Journée finie** : le solde et le plan de récupération incluent alors aujourd'hui (comme si c'était hier) ; **Rouvrir** ou un nouveau pointage d'entrée rouvre le jour.
 - **Historique** par mois et par semaine : périodes, total, écart du jour, totaux semaine/mois. Toucher un jour pour l'éditer (ajouter/modifier/supprimer des périodes, oubli de pointage) ou le marquer **jour férié / congé / maladie / télétravail / autre** (objectif 0, ou demi-journée ; le télétravail reste un jour travaillé, simple libellé).
 - **Réglages** : objectif par jour (8h par défaut), jours travaillés (lun–ven), objectif hebdo optionnel (réparti sur les jours travaillés), objectif différent par jour, date de début du solde, **solde de départ** (ex. `-1h16` pour reprendre le chiffre des RH), arrondi des périodes (1/5/10/15/30 mn, plus proche/inférieur/supérieur), langue (FR / EN / العربية), thème (auto/clair/sombre), **jours fériés français** automatiques.
 - **Données** : sauvegarde/import JSON, export CSV (séparateur `;`, s'ouvre dans Excel), **synchronisation QR** d'un appareil vers un autre (sans serveur).
@@ -42,7 +42,7 @@ assets/icons/            icônes (favicon, 192, 512, maskable, apple-touch)
 
 ## Mise à jour / publication
 - Tous les chemins sont relatifs : le dossier peut être publié tel quel sur GitHub Pages (ex. `https://<user>.github.io/pointage/`), Netlify, Cloudflare Pages…
-- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v9"` → `"v10"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
+- **Après toute modification** de HTML/CSS/JS/icônes, augmenter `VERSION` dans `sw.js` (`"v10"` → `"v11"`, …) pour que les apps installées récupèrent la nouvelle version. Les données (localStorage) ne sont jamais effacées par ce changement.
 
 
 ## Identifiant PWA (v1.3.2)
@@ -134,3 +134,12 @@ Sur l'écran **Aujourd'hui**, une carte compacte affiche les horaires du jour : 
 - **Tableau officiel en priorité** : les fichiers [horaires-2026-10.js](https://www.habous.gov.ma/data/horaires-2026-10.js) et [horaires-2026-11.js](https://www.habous.gov.ma/data/horaires-2026-11.js) (ville **104**, مراكش, `fuseau: GMT`), récupérés le **25 nov. 2026**, restent intégrés dans `assets/js/prayer-marrakech.js` et sont utilisés tels quels quand la date est couverte. Ailleurs, le même calcul sert pour n'importe quel jour de l'année. D'autres coordonnées utilisent la même méthode, avec les dépressions par défaut au niveau de la mer.
 - La **prochaine prière** est mise en évidence, avec un compte à rebours (`dans 12:05`). Pendant les **30 minutes** qui suivent l'heure d'une prière, la carte affiche un compteur « **منذ** 2:35 » et met cette prière en évidence ; ensuite elle repasse au compte à rebours vers la suivante. Chourouk n'est pas une prière : il apparaît dans la liste et le compte à rebours, mais ne déclenche pas le compteur « منذ ».
 - Dans **Réglages → Affichage** : deux cases indépendantes, **Afficher sur mobile** et **Afficher sur PC** (activées par défaut), plus des champs facultatifs de latitude / longitude (bouton **Reprendre Marrakech**). Un appareil est traité comme *mobile* si l'user-agent indique un téléphone, ou si le pointeur principal est tactile (`pointer: coarse`), ou si la largeur de la fenêtre est < 768 px ; sinon c'est un *PC*. Le test est fait **sur l'appareil lui-même** : après une synchro PC ↔ mobile, les deux drapeaux voyagent dans `settings.prayer`, mais chaque appareil n'applique que le sien. L'ancien réglage unique `show` est migré (les deux cases prennent sa valeur).
+
+## Journée finie (v1.5.0)
+
+Sur l'écran **Aujourd'hui**, le bouton **Journée finie** clôture le jour en cours (drapeau `closedDays[YYYY-MM-DD]` enregistré avec les autres données du jour, et synchronisé comme `daysOff`) :
+
+- Le **solde cumulé**, d'habitude arrêté à hier, **inclut aujourd'hui**. Le libellé passe à « au {aujourd'hui} au cumul ». La ligne « Avec aujourd'hui / En sortant maintenant » disparaît (c'est déjà compté).
+- Le **plan de récupération** part de **demain** : le déficit est celui du solde une fois aujourd'hui inclus. La case **Inclure aujourd'hui (si pas terminé)** n'a plus d'effet tant que le jour est clos (même logique que lorsqu'on a déjà fait ses heures).
+- Si une période est encore ouverte, elle est **clôturée automatiquement à l'heure actuelle** (pas de fenêtre de confirmation : le geste veut dire « j'ai fini ») et un toast l'indique (« Sortie 16:39 ✔ · Journée terminée »).
+- L'écran affiche le badge **Journée terminée** et un bouton **Rouvrir**. Un nouveau pointage d'**Entrée** le même jour **rouvre** automatiquement le jour (le drapeau est retiré, avec un horodatage pour que la synchro conserve la réouverture).

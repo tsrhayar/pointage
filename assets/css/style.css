@@ -52,6 +52,9 @@ main { max-width: 640px; margin: 0 auto; padding: 4px 14px 16px; }
 .clock-btn:active { transform: scale(.98); }
 .clock-btn.in { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 8px 24px rgba(5, 150, 105, .35); }
 .clock-btn.out { background: linear-gradient(135deg, #f43f5e, #dc2626); box-shadow: 0 8px 24px rgba(220, 38, 38, .32); }
+.day-close-bar { width: 100%; max-width: 360px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.day-close-bar .btn { min-height: 40px; }
+.badge.day-closed { background: var(--ok-soft, color-mix(in srgb, #10b981 18%, transparent)); color: var(--ok, #059669); font-size: .8rem; padding: 6px 12px; }
 .stats-grid { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stats-grid > div { background: var(--bg); border-radius: 12px; padding: 10px 12px; display: grid; }
 .label { color: var(--muted); font-size: .75rem; }

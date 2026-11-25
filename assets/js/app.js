@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const C = window.PointageCore, I18N = window.I18N;
-  const APP_VERSION = "1.4.2";
+  const APP_VERSION = "1.5.0";
   const KEY = "pointage.v1";
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -14,7 +14,7 @@
     const s = C.withDefaults({ startDate: C.dateKey(Date.now()) });
     const nav = (navigator.language || "fr").slice(0, 2);
     s.lang = I18N[nav] && nav !== "en" ? nav : "fr";
-    return { version: 1, settings: s, sessions: [], daysOff: {} };
+    return { version: 1, settings: s, sessions: [], daysOff: {}, closedDays: {} };
   }
   let data = load();
   function persist() {
@@ -75,9 +75,30 @@
     const today = C.dateKey(now);
     const open = data.sessions.find((x) => x.end == null && C.dateKey(x.start) === today);
     if (open) { open.end = Math.max(now, open.start + 1000); toast(`${t("clockOut")} ${C.hhmm(now)} ✔`); }
-    else { data.sessions.push({ id: uid(), start: now, end: null, note: "" }); toast(`${t("clockIn")} ${C.hhmm(now)} ✔`); }
+    else {
+      const reopened = C.isDayClosed(data, today);
+      data.sessions.push({ id: uid(), start: now, end: null, note: "" });
+      if (reopened) {
+        data.closedDays = C.reopenDay(data, now).closedDays;
+        toast(`${t("clockIn")} ${C.hhmm(now)} ✔ · ${t("reopenDayToast")}`);
+      } else toast(`${t("clockIn")} ${C.hhmm(now)} ✔`);
+    }
     persist(); render();
     try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.isActive)) navigator.vibrate(30); } catch (e) {}
+  }
+  function closeToday() {
+    const now = Date.now();
+    const r = C.closeDay(data, now);
+    data.sessions = r.sessions;
+    data.closedDays = r.closedDays;
+    toast(r.clockedOut ? t("closeDayOutToast", { t: C.hhmm(now) }) : t("closeDayToast"));
+    persist(); render();
+  }
+  function reopenToday() {
+    const now = Date.now();
+    data.closedDays = C.reopenDay(data, now).closedDays;
+    toast(t("reopenDayToast"));
+    persist(); render();
   }
 
   /* ---------- TODAY view ---------- */
@@ -117,13 +138,17 @@
 
     // balance
     const bc = $("#balanceCard");
-    const yk = C.addDays(s.key, -1);
+    const upTo = s.balanceUpTo || C.addDays(s.key, -1);
     bc.classList.toggle("neg", s.balanceBefore < 0); bc.classList.toggle("pos", s.balanceBefore > 0);
-    $("#balanceAt").textContent = t("balanceAt", { d: fmtDate(yk, { day: "numeric", month: "short" }) });
+    $("#balanceAt").textContent = t("balanceAt", { d: fmtDate(upTo, { day: "numeric", month: "short" }) });
     $("#balanceMain").textContent = balanceText(s.balanceBefore);
-    $("#balanceNow").textContent = s.sessions.length || s.target === 0
+    $("#balanceNow").textContent = s.closed ? "" : (s.sessions.length || s.target === 0
       ? (s.running ? t("ifLeaveNow", { x: signed(s.balanceNow) }) : t("withToday", { x: signed(s.balanceNow) }))
-      : "";
+      : "");
+    const closed = !!s.closed;
+    $("#closeDayBtn").hidden = closed;
+    $("#dayClosedBadge").hidden = !closed;
+    $("#reopenDayBtn").hidden = !closed;
 
     $("#hrAnchorLine").textContent = hrAnchorText();
     renderPlan(s, now);
@@ -139,7 +164,8 @@
     $("#weekDays").innerHTML = w.days.map((d) => {
       const past = d.key <= s.key;
       const cls = ["wd", d.key === s.key ? "today" : "", !d.target ? "off" : ""].join(" ");
-      const diff = past && (d.worked || d.target) && d.key < s.key ? `<span class="d ${d.diff >= 0 ? "pos" : "neg"}">${d.diff >= 0 ? "+" : "−"}${C.fmtClock(Math.abs(d.diff))}</span>` : `<span class="d">&nbsp;</span>`;
+      const showDiff = past && (d.worked || d.target) && (d.key < s.key || (d.key === s.key && s.closed));
+      const diff = showDiff ? `<span class="d ${d.diff >= 0 ? "pos" : "neg"}">${d.diff >= 0 ? "+" : "−"}${C.fmtClock(Math.abs(d.diff))}</span>` : `<span class="d">&nbsp;</span>`;
       return `<div class="${cls}" data-day="${d.key}" title="${fmtDate(d.key)}">${L_.days[C.weekday(d.key)]}<b>${d.worked ? C.fmtClock(d.worked) : "–"}</b>${diff}</div>`;
     }).join("");
 
@@ -613,6 +639,8 @@
 
   /* ---------- events ---------- */
   $("#clockBtn").addEventListener("click", clockToggle);
+  $("#closeDayBtn").addEventListener("click", closeToday);
+  $("#reopenDayBtn").addEventListener("click", reopenToday);
   $$(".tabbar button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
   $("#editTodayBtn").addEventListener("click", () => openDay(C.dateKey(Date.now())));
   document.addEventListener("click", (e) => {

@@ -215,7 +215,53 @@
     return { from, upTo, minutes: init + r.diff, worked: r.worked, target: r.target };
   }
 
-  /* Today summary: remaining minutes, estimated leave time to reach the day target and to bring the cumulative balance to 0. */
+
+  /* Manual "day closed" flag (Journée finie). Stored per date and synced with the rest of the day.
+     A false entry is kept (with `at`) so a reopen wins a later merge against an older close. */
+  function closedDaysOf(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const [k, v] of Object.entries(raw)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || v == null) continue;
+      if (v === true) { out[k] = { closed: true, at: 0 }; continue; }
+      if (typeof v !== "object") continue;
+      const at = Number(v.at);
+      out[k] = { closed: !!v.closed, at: Number.isFinite(at) ? at : 0 };
+    }
+    return out;
+  }
+  function isDayClosed(data, k) {
+    const row = data && data.closedDays && data.closedDays[k];
+    return !!(row && row.closed);
+  }
+  /* Cumulative balance is normally through yesterday; after closing today it includes today. */
+  function balanceCutoff(data, now) {
+    const today = dateKey(now);
+    return isDayClosed(data, today) ? today : addDays(today, -1);
+  }
+  function closeDay(data, now) {
+    now = now == null ? Date.now() : now;
+    const k = dateKey(now);
+    const sessions = ((data && data.sessions) || []).map((x) => Object.assign({}, x));
+    let clockedOut = false;
+    for (const x of sessions) {
+      if (x.end == null && dateKey(x.start) === k) {
+        x.end = Math.max(now, x.start + 1000);
+        clockedOut = true;
+      }
+    }
+    const closedDays = Object.assign({}, closedDaysOf(data && data.closedDays));
+    closedDays[k] = { closed: true, at: now };
+    return { sessions, closedDays, clockedOut, key: k };
+  }
+  function reopenDay(data, now) {
+    now = now == null ? Date.now() : now;
+    const k = dateKey(now);
+    const closedDays = Object.assign({}, closedDaysOf(data && data.closedDays));
+    closedDays[k] = { closed: false, at: now };
+    return { closedDays, key: k };
+  }
+
   /* ---------- recovery plan ---------- */
   /* Split `total` minutes over n days in whole minutes; the remainder goes one minute each to the first days. */
   function splitMinutes(total, n) {
@@ -262,9 +308,11 @@
     return { start, brk, autoStart: auto.start, autoBrk: auto.brk, planStart, planBrk, manual, fromClock, autoKey: auto.key };
   }
   const leaveFromTimes = (k, start, brk, target) => atTime(k, "00:00") + (start + brk + target) * MIN;
-  /* Is today finished? (sessions recorded, nothing running and the day target reached) */
+  /* Is today finished? Manually closed, or sessions recorded, nothing running and the day target reached. */
   function todayFinished(data, now) {
-    const k = dateKey(now), d = dayStats(k, data, now);
+    const k = dateKey(now);
+    if (isDayClosed(data, k)) return true;
+    const d = dayStats(k, data, now);
     return d.sessions.length > 0 && !d.sessions.some((x) => x.end == null) && d.worked >= d.target;
   }
   /* Candidate days for a mode (keys ≥ first day). Days off and non-working days are excluded, except custom picks on a
@@ -285,7 +333,7 @@
     const s = data.settings, rec = Object.assign({}, DEFAULT_SETTINGS.recovery, s.recovery || {});
     if (rec.mode === "off") return null;
     const today = dateKey(now);
-    const deficit = -balance(data, addDays(today, -1), now).minutes;
+    const deficit = -balance(data, balanceCutoff(data, now), now).minutes;
     if (deficit <= 0) return null;
     const keys = recoveryDays(data, now, rec);
     const parts = splitMinutes(deficit, keys.length);
@@ -311,8 +359,11 @@
     const planExtra = plan ? plan.todayExtra : 0;
     const goal = d.target + planExtra;                                      // today's goal including the plan
     const remaining = Math.max(0, goal - d.worked);
-    const before = balance(data, addDays(k, -1), now).minutes;          // through yesterday
-    const toZero = Math.max(0, d.target - d.worked - before);             // to end the day with a cumulative 0
+    const closed = isDayClosed(data, k);
+    const upTo = closed ? k : addDays(k, -1);
+    const yesterday = balance(data, addDays(k, -1), now).minutes;       // always through yesterday (leave-for-zero)
+    const before = closed ? balance(data, k, now).minutes : yesterday;  // displayed cumulative
+    const toZero = Math.max(0, d.target - d.worked - yesterday);         // to end the day with a cumulative 0
     const times = planTimes(data, k, now);
     const leaveOf = (need, total) => {
       if (need <= 0) return null;
@@ -321,7 +372,8 @@
     };
     return {
       key: k, ...d, running, open, remaining, plan, planExtra, goal, planTimes: times,
-      balanceBefore: before, balanceNow: before + d.diff,
+      closed, balanceUpTo: upTo,
+      balanceBefore: before, balanceNow: closed ? before : before + d.diff,
       leaveAt: leaveOf(remaining, goal),
       leaveAtTarget: leaveOf(d.target - d.worked, d.target),
       leaveAtZero: leaveOf(toZero, d.worked + toZero),
@@ -426,7 +478,9 @@
     const sessions = obj.sessions.filter((x) => x && Number.isFinite(+x.start)).map((x) => ({
       id: String(x.id || Math.random().toString(36).slice(2)), start: +x.start, end: x.end == null ? null : +x.end, note: x.note ? String(x.note) : "",
     }));
-    return { version: 1, settings: withDefaults(obj.settings), sessions, daysOff: obj.daysOff && typeof obj.daysOff === "object" ? obj.daysOff : {} };
+    return { version: 1, settings: withDefaults(obj.settings), sessions,
+      daysOff: obj.daysOff && typeof obj.daysOff === "object" ? obj.daysOff : {},
+      closedDays: closedDaysOf(obj.closedDays) };
   }
   function toCSV(data, now) {
     const esc = (v) => /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
@@ -460,7 +514,7 @@
       const first = (data.sessions || []).reduce((m, x) => Math.min(m, x.start), Infinity);
       calc = Object.assign({}, s, { startDate: isFinite(first) ? dateKey(first) : hr.date, initialBalance: 0, hrAnchor: null });
     }
-    const appMinutes = balance({ settings: calc, sessions: (data && data.sessions) || [], daysOff: (data && data.daysOff) || {} }, hr.date, now).minutes;
+    const appMinutes = balance({ settings: calc, sessions: (data && data.sessions) || [], daysOff: (data && data.daysOff) || {}, closedDays: (data && data.closedDays) || {} }, hr.date, now).minutes;
     const rhMinutes = hr.minutes;
     const delta = appMinutes - rhMinutes;
     return { date: hr.date, appMinutes, rhMinutes, delta, equal: Math.abs(delta) <= 1, usedPreviousAnchor: !!(prev && prev.date < hr.date) };
@@ -482,7 +536,8 @@
     DEFAULT_SETTINGS, withDefaults, baseTarget, targetFor, resolveOff, isNonWorkingOff, holidayOn, easterSunday, frenchHolidays,
     setDayOff, applySpecialRange,
     roundMinutes, sessionMinutes, sessionsOn, workedOn, openSession, staleOpen,
-    indexByDay, dayStats, rangeStats, balance, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV, parseHR, applyHRAnchor, anchorValid,
+    indexByDay, dayStats, rangeStats, balance, balanceCutoff, todaySummary, fmtDur, fmtClock, fmtSigned, parseDur, validate, toCSV, parseHR, applyHRAnchor, anchorValid,
     compareHR, recordComparison, shortcutAction,
-    splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits, planTimes, leaveFromTimes };
+    splitMinutes, recoveryDays, recoveryPlan, todayFinished, habits, planTimes, leaveFromTimes,
+    closedDaysOf, isDayClosed, closeDay, reopenDay };
 });

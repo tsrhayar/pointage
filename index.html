@@ -51,6 +51,11 @@
         </div>
         <div id="statusLine" class="status"></div>
         <button id="clockBtn" class="clock-btn in" type="button"><span id="clockIcon">▶</span> <span id="clockLabel">Entrée</span></button>
+        <div id="dayCloseBar" class="day-close-bar">
+          <button id="closeDayBtn" class="btn ghost" type="button" data-i18n="closeDay">Journée finie</button>
+          <span id="dayClosedBadge" class="badge day-closed" hidden data-i18n="dayClosedBadge">Journée terminée</span>
+          <button id="reopenDayBtn" class="btn small" type="button" hidden data-i18n="reopenDay">Rouvrir</button>
+        </div>
         <div class="stats-grid">
           <div><span class="label" data-i18n="target">Objectif</span><b id="tTarget">–</b></div>
           <div><span class="label" id="tRemainingLabel" data-i18n="remaining">Reste</span><b id="tRemaining">–</b></div>

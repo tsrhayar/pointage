@@ -177,7 +177,8 @@
   function summarize(data) {
     const sessions = (data && data.sessions) || [];
     const daysOff = (data && data.daysOff) || {};
-    const days = new Set(Object.keys(daysOff));
+    const closedDays = (data && data.closedDays) || {};
+    const days = new Set([...Object.keys(daysOff), ...Object.keys(closedDays)]);
     for (const s of sessions) if (s && Number.isFinite(+s.start)) days.add(dateKey(+s.start));
     const keys = [...days].sort();
     const hr = data && data.settings && data.settings.hrAnchor;
@@ -190,13 +191,14 @@
     };
   }
 
-  function dayStamp(sessions, off) {
+  function dayStamp(sessions, off, closed) {
     let max = 0;
     for (const s of sessions) {
       if (s && Number.isFinite(+s.start)) max = Math.max(max, +s.start);
       if (s && s.end != null && Number.isFinite(+s.end)) max = Math.max(max, +s.end);
     }
     if (off && Number.isFinite(+off.at)) max = Math.max(max, +off.at);
+    if (closed && Number.isFinite(+closed.at)) max = Math.max(max, +closed.at);
     return max;
   }
   function indexByDay(data) {
@@ -204,12 +206,16 @@
     for (const s of (data.sessions || [])) {
       if (!s || !Number.isFinite(+s.start)) continue;
       const k = dateKey(+s.start);
-      if (!map[k]) map[k] = { sessions: [], off: null };
+      if (!map[k]) map[k] = { sessions: [], off: null, closed: null };
       map[k].sessions.push(s);
     }
     for (const [k, off] of Object.entries(data.daysOff || {})) {
-      if (!map[k]) map[k] = { sessions: [], off: off };
+      if (!map[k]) map[k] = { sessions: [], off: off, closed: null };
       else map[k].off = off;
+    }
+    for (const [k, closed] of Object.entries(data.closedDays || {})) {
+      if (!map[k]) map[k] = { sessions: [], off: null, closed: closed };
+      else map[k].closed = closed;
     }
     return map;
   }
@@ -220,13 +226,15 @@
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
     const sessions = [];
     const daysOff = {};
+    const closedDays = {};
     for (const k of keys) {
       const la = a[k], lb = b[k];
-      const pick = !la ? lb : !lb ? la : (dayStamp(lb.sessions, lb.off) >= dayStamp(la.sessions, la.off) ? lb : la);
+      const pick = !la ? lb : !lb ? la : (dayStamp(lb.sessions, lb.off, lb.closed) >= dayStamp(la.sessions, la.off, la.closed) ? lb : la);
       sessions.push.apply(sessions, pick.sessions);
       if (pick.off) daysOff[k] = pick.off;
+      if (pick.closed) closedDays[k] = pick.closed;
     }
-    const raw = { version: 1, settings: (local && local.settings) || {}, sessions: sessions, daysOff: daysOff };
+    const raw = { version: 1, settings: (local && local.settings) || {}, sessions: sessions, daysOff: daysOff, closedDays: closedDays };
     const fn = validate || (Core && Core.validate);
     return fn ? fn(raw) : raw;
   }
